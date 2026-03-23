@@ -1,0 +1,32 @@
+{
+  "name": "picture-creation",
+  "version": "0.7.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "package:release": "powershell -ExecutionPolicy Bypass -File .\\scripts\\package-release.ps1 -SkipBuild",
+    "package:release:safe": "powershell -ExecutionPolicy Bypass -File .\\scripts\\package-release.ps1 -SkipBuild -SanitizeSecrets",
+    "package:release:zip": "powershell -ExecutionPolicy Bypass -File .\\scripts\\package-release.ps1 -SkipBuild -CreateZip",
+    "package:release:safe:zip": "powershell -ExecutionPolicy Bypass -File .\\scripts\\package-release.ps1 -SkipBuild -SanitizeSecrets -CreateZip",
+    "package:installer:safe": "powershell -ExecutionPolicy Bypass -File .\\scripts\\build-installer.ps1 -SkipBuild -SanitizeSecrets",
+    "package:installer:exe:safe": "powershell -ExecutionPolicy Bypass -File .\\scripts\\build-inno-installer.ps1 -SkipBuild -SanitizeSecrets",
+    "package:installer:exe:v2:safe": "powershell -ExecutionPolicy Bypass -File .\\scripts\\build-inno-installer.ps1 -SkipBuild -SanitizeSecrets -ReleaseTag v2"
+  },
+  "dependencies": {
+    "@google/genai": "latest",
+    "fflate": "^0.8.2",
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "sharp": "0.34.5"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest"
+  }
+}
