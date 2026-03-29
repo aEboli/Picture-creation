@@ -86,3 +86,14 @@ test("job details header exposes all-images download actions alongside approved 
   assert.match(detailsContent, /allImagesDownloadUrl/);
   assert.match(detailsContent, /successfulItems/);
 });
+
+test("job details copy summary panels use sequential numeric node names instead of copy title fallback text", () => {
+  const detailsContent = readSource("components", "job-details-client.tsx");
+
+  assert.match(detailsContent, /const activeItemNodeName = String\(Math\.max\(activeItemIndex, 0\) \+ 1\);/);
+  assert.match(detailsContent, /<strong>\{activeItemNodeName\}<\/strong>/);
+  assert.match(detailsContent, /details\.items\.map\(\(item, itemIndex\) =>/);
+  assert.match(detailsContent, /<strong>\{String\(itemIndex \+ 1\)\}<\/strong>/);
+  assert.doesNotMatch(detailsContent, /<strong>\{activeItem\.copy\.title \|\| details\.job\.productName\}<\/strong>/);
+  assert.doesNotMatch(detailsContent, /<strong>\{item\.copy\.title \|\| details\.job\.productName\}<\/strong>/);
+});

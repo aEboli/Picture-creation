@@ -674,6 +674,7 @@ export function JobDetailsClient({
   const activePreviewAsset = activeItem?.generatedAsset ?? null;
   const activeDimensionWarning = activeItem ? getDimensionWarning(activeItem) : null;
   const activeItemIndex = activeItem ? details.items.findIndex((item) => item.id === activeItem.id) : -1;
+  const activeItemNodeName = String(Math.max(activeItemIndex, 0) + 1);
   const activeLightboxIndex = lightboxItems.findIndex((item) => item.itemId === activeItemId);
   const activeLightboxItem = activeLightboxIndex >= 0 ? lightboxItems[activeLightboxIndex] : null;
   const showCopySummaryCards = details.job.creationMode === "prompt" || details.job.creationMode === "reference-remix";
@@ -1394,7 +1395,7 @@ export function JobDetailsClient({
 
                   {showCopySummaryCards && activeItem.copy ? (
                     <div className="copy-panel">
-                      <strong>{activeItem.copy.title || details.job.productName}</strong>
+                      <strong>{activeItemNodeName}</strong>
                       {activeItem.copy.subtitle ? <p>{activeItem.copy.subtitle}</p> : null}
                       {activeItem.copy.highlights.length ? (
                         <ul>
@@ -1601,7 +1602,7 @@ export function JobDetailsClient({
       {activeDetailTab === "variants" ? (
       <section className="detail-tab-section">
           <div className="variant-drawer-list">
-          {details.items.map((item) => {
+          {details.items.map((item, itemIndex) => {
             const dimensionWarning = getDimensionWarning(item);
 
             return (
@@ -1740,7 +1741,7 @@ export function JobDetailsClient({
 
               {showCopySummaryCards && item.copy ? (
                 <div className="copy-panel">
-                  <strong>{item.copy.title || details.job.productName}</strong>
+                  <strong>{String(itemIndex + 1)}</strong>
                   {item.copy.subtitle ? <p>{item.copy.subtitle}</p> : null}
                   {item.copy.highlights.length ? (
                     <ul>

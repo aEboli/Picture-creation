@@ -5,6 +5,7 @@ import {
   buildReferenceRemixFallbackOptimizedPrompt,
   buildReferenceRemixStage1AnalysisPrompt,
   buildReferenceRemixStage2PromptConversionPrompt,
+  generateModeWorkflowCopyBundle,
   getImageGenerationTemperature,
   getModeWorkflowCopyTemperature,
   getSharedModeAnalysisTemperature,
@@ -231,6 +232,30 @@ test("prompt mode text-to-image prompt also avoids wrapper wording", () => {
   assert.doesNotMatch(promptText, /Generate a new product image for a amazon listing/i);
   assert.doesNotMatch(promptText, /No source images are provided\./);
   assert.match(promptText, /Quality emphasis:|画质强化：/);
+});
+
+test("reference-remix missing-analysis fallback uses clean readable title fields", async () => {
+  const fallbackCopy = await generateModeWorkflowCopyBundle({
+    apiKey: "",
+    textModel: "",
+    mode: "reference-remix",
+    imageType: "scene",
+    analysis: null,
+    country: "US",
+    language: "en-US",
+    platform: "amazon",
+    category: "general",
+    productName: "",
+    brandName: "",
+    sellingPoints: "",
+    restrictions: "",
+    sourceDescription: "",
+    ratio: "1:1",
+    resolutionLabel: "1K",
+  });
+
+  assert.equal(fallbackCopy.title, "Reference remake");
+  assert.equal(fallbackCopy.posterHeadline, "Reference remake");
 });
 
 test("prompt mode helper returns the raw prompt body plus quality emphasis when forced", () => {

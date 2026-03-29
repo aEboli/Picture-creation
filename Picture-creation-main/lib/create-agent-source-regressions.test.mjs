@@ -117,3 +117,12 @@ test("create form persists a draftId and broadcasts draft context for agent hist
   assert.match(content, /promptInputs: mappedPromptInputs \?\? current\.promptInputs,/);
   assert.match(content, /targetPromptCount: requestCount,/);
 });
+
+test("create form does not warn before leaving the studio", () => {
+  const content = read("components", "create-job-form.tsx");
+
+  assert.doesNotMatch(content, /window\.addEventListener\("beforeunload"/);
+  assert.doesNotMatch(content, /window\.removeEventListener\("beforeunload"/);
+  assert.doesNotMatch(content, /window\.confirm\(text\.leavePrompt\)/);
+  assert.doesNotMatch(content, /event\.returnValue = text\.leavePrompt/);
+});

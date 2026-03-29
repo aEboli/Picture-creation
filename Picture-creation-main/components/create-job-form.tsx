@@ -217,7 +217,6 @@ function copyFor(language: UiLanguage): Record<string, string> {
     hint: "Switch between joint multi-image generation and batch template runs from the source panel.",
     imageCounter: "{current}/{total}",
     imageTypes: "Image types",
-    leavePrompt: "There is an unfinished draft. Leaving this page means uploaded images must be selected again. Leave anyway?",
     livePreview: "Live preview",
     livePreviewEmpty: "Upload images to show the live preview here.",
     nextImage: "Next",
@@ -336,7 +335,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const [submitBlockedFeedback, setSubmitBlockedFeedback] = useState(false);
   const [isSourceDropActive, setIsSourceDropActive] = useState(false);
   const [isReferenceDropActive, setIsReferenceDropActive] = useState(false);
-  const allowLeaveRef = useRef(false);
   const formRef = useRef<HTMLFormElement | null>(null);
   const sourceFileInputRef = useRef<HTMLInputElement | null>(null);
   const sourceDropDepthRef = useRef(0);
@@ -436,17 +434,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     return parsedVariantsPerType === null ? text.quantityRangeError : "";
   }, [parsedVariantsPerType, payload.creationMode, text.quantityRangeError, text.quantityRequired, variantsInput]);
 
-  const hasDraftChanges = useMemo(() => {
-    const payloadChanged = JSON.stringify(payload) !== JSON.stringify(INITIAL_PAYLOAD);
-    const typesChanged = JSON.stringify(selectedTypes) !== JSON.stringify(INITIAL_SELECTED_TYPES);
-    const ratiosChanged = JSON.stringify(selectedRatios) !== JSON.stringify(INITIAL_SELECTED_RATIOS);
-    const resolutionsChanged = JSON.stringify(selectedResolutions) !== JSON.stringify(INITIAL_SELECTED_RESOLUTIONS);
-    const hasImages = files.length > 0 || referenceFiles.length > 0;
-    const promptMarketChanged = promptMarketOverridesEnabled;
-
-    return payloadChanged || typesChanged || ratiosChanged || resolutionsChanged || hasImages || promptMarketChanged;
-  }, [files.length, payload, promptMarketOverridesEnabled, referenceFiles.length, selectedRatios, selectedResolutions, selectedTypes]);
-  const shouldWarnBeforeLeave = hasDraftChanges && !submittedJobId;
   const submitBlockReason = useMemo<SubmitBlockReason | null>(() => {
     if (isPending) {
       return null;
@@ -685,66 +672,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
 
     window.dispatchEvent(new CustomEvent(CREATE_AGENT_DRAFT_CONTEXT_EVENT, { detail: { draftId: agentDraftId } }));
   }, [agentDraftId, draftReady]);
-
-  useEffect(() => {
-    if (!draftReady || !shouldWarnBeforeLeave) {
-      return;
-    }
-
-    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (allowLeaveRef.current) {
-        return;
-      }
-
-      event.preventDefault();
-      event.returnValue = text.leavePrompt;
-    };
-
-    const handleDocumentClick = (event: MouseEvent) => {
-      if (allowLeaveRef.current) {
-        return;
-      }
-
-      const target = event.target as HTMLElement | null;
-      const anchor = target?.closest("a[href]") as HTMLAnchorElement | null;
-      if (!anchor || anchor.target === "_blank" || anchor.hasAttribute("download")) {
-        return;
-      }
-
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
-        return;
-      }
-
-      const href = anchor.getAttribute("href");
-      if (!href || href.startsWith("#")) {
-        return;
-      }
-
-      const nextUrl = new URL(anchor.href, window.location.href);
-      const currentUrl = new URL(window.location.href);
-      if (nextUrl.href === currentUrl.href) {
-        return;
-      }
-
-      const confirmed = window.confirm(text.leavePrompt);
-      if (!confirmed) {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation?.();
-        return;
-      }
-
-      allowLeaveRef.current = true;
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    document.addEventListener("click", handleDocumentClick, true);
-
-    return () => {
-      window.removeEventListener("beforeunload", handleBeforeUnload);
-      document.removeEventListener("click", handleDocumentClick, true);
-    };
-  }, [draftReady, shouldWarnBeforeLeave, text.leavePrompt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1400,7 +1327,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       return;
     }
 
-    allowLeaveRef.current = true;
     router.push(`/jobs/${submittedJobId}`);
   }
 

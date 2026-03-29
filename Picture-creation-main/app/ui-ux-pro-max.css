@@ -3333,9 +3333,40 @@ input[type="file"]::file-selector-button:hover {
   grid-template-columns: minmax(0, 1.35fr) minmax(var(--ui-sidebar-width-md), 0.65fr);
 }
 
+.settings-hero {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 32px clamp(18px, 4vw, 44px);
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% -16%, rgba(240, 182, 58, 0.16), transparent 46%),
+    radial-gradient(circle at 90% 26%, rgba(68, 169, 255, 0.14), transparent 36%),
+    linear-gradient(180deg, rgba(12, 17, 29, 0.95), rgba(9, 13, 24, 0.9));
+}
+
+.settings-hero-copy {
+  max-width: 840px;
+  display: grid;
+  gap: 10px;
+}
+
+.settings-hero-title {
+  margin: 0;
+  font-size: clamp(2rem, 4.2vw, 3.7rem);
+  line-height: 0.96;
+  letter-spacing: -0.05em;
+}
+
+.settings-l-layout {
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  grid-template-areas:
+    "gemini feishu"
+    "gemini storage";
+  align-items: stretch;
+}
+
 .settings-section-header,
-.settings-card-footer,
-.settings-submit-panel,
 .brand-card-button,
 .template-card-top,
 .template-card-actions,
@@ -3365,10 +3396,33 @@ input[type="file"]::file-selector-button:hover {
   gap: 20px;
 }
 
+.settings-console-card-header {
+  align-items: baseline;
+  gap: 10px;
+}
+
+.settings-console-card-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.settings-console-card-header span {
+  color: rgba(225, 219, 205, 0.68);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .settings-card {
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04) 42%, rgba(255, 255, 255, 0.02) 100%),
     linear-gradient(180deg, rgba(12, 16, 26, 0.96), rgba(10, 13, 22, 0.88));
+  min-height: 100%;
+}
+
+.settings-card-gemini {
+  grid-area: gemini;
 }
 
 .settings-card.is-info {
@@ -3390,6 +3444,14 @@ input[type="file"]::file-selector-button:hover {
   background:
     linear-gradient(155deg, rgba(255, 111, 111, 0.14), rgba(255, 255, 255, 0.05) 42%, rgba(255, 255, 255, 0.02) 100%),
     linear-gradient(180deg, rgba(28, 13, 22, 0.98), rgba(10, 13, 22, 0.88));
+}
+
+.settings-card-feishu {
+  grid-area: feishu;
+}
+
+.settings-card-storage {
+  grid-area: storage;
 }
 
 .settings-guide-card ul {
@@ -3417,9 +3479,16 @@ input[type="file"]::file-selector-button:hover {
   margin-top: var(--space-8);
 }
 
-.settings-card-compact,
-.settings-card-wide {
-  min-height: 100%;
+.settings-storage-grid {
+  align-items: start;
+}
+
+.settings-feishu-connection-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.settings-feishu-mapping-field textarea {
+  min-height: 230px;
 }
 
 .settings-field-span-2 {
@@ -3432,29 +3501,50 @@ input[type="file"]::file-selector-button:hover {
   gap: var(--space-12);
 }
 
-.settings-submit-panel {
-  justify-content: flex-end;
-  position: relative;
-  overflow: hidden;
-}
-
-.settings-submit-panel.is-accent {
-  border-color: rgba(240, 182, 58, 0.18);
+.settings-actions-footer {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
   background:
-    linear-gradient(150deg, rgba(240, 182, 58, 0.18), rgba(255, 255, 255, 0.06) 42%, rgba(255, 255, 255, 0.02) 100%),
-    linear-gradient(180deg, rgba(28, 21, 8, 0.98), rgba(10, 13, 22, 0.88));
+    linear-gradient(160deg, rgba(240, 182, 58, 0.15), rgba(255, 255, 255, 0.04) 34%, rgba(255, 255, 255, 0.02) 100%),
+    linear-gradient(180deg, rgba(14, 18, 30, 0.95), rgba(10, 14, 24, 0.9));
 }
 
-.settings-submit-panel.is-accent::before {
-  content: "";
-  position: absolute;
-  inset: auto -10% -56% auto;
-  width: var(--ui-card-media-size-lg);
-  height: var(--ui-card-media-size-lg);
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(240, 182, 58, 0.28) 0%, transparent 72%);
-  filter: blur(18px);
-  pointer-events: none;
+.settings-actions-status {
+  min-width: 0;
+}
+
+.settings-actions-feedback {
+  margin: 0;
+}
+
+.settings-actions-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-action-button {
+  width: 100%;
+  min-height: 58px;
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.settings-action-button-test {
+  background:
+    linear-gradient(145deg, rgba(67, 163, 255, 0.85), rgba(56, 116, 255, 0.84)),
+    linear-gradient(180deg, rgba(8, 20, 40, 0.82), rgba(8, 12, 23, 0.9));
+  border-color: rgba(108, 190, 255, 0.58);
+}
+
+.settings-action-button-save {
+  background:
+    linear-gradient(145deg, rgba(240, 182, 58, 0.88), rgba(242, 143, 58, 0.85)),
+    linear-gradient(180deg, rgba(42, 30, 12, 0.8), rgba(16, 14, 20, 0.9));
+  border-color: rgba(255, 205, 104, 0.58);
 }
 
 .settings-feedback {
@@ -4540,6 +4630,14 @@ input[type="file"]::file-selector-button:hover {
     gap: 14px;
   }
 
+  .settings-l-layout {
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  }
+
+  .settings-hero {
+    padding: 26px 20px;
+  }
+
   .app-header-center-cluster {
     justify-content: flex-start;
   }
@@ -4593,6 +4691,22 @@ input[type="file"]::file-selector-button:hover {
 
   .history-job-open-inline {
     justify-self: start;
+  }
+}
+
+@media (max-width: 1023px) {
+  .settings-l-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "gemini"
+      "feishu"
+      "storage";
+  }
+
+  .settings-card-gemini,
+  .settings-card-feishu,
+  .settings-card-storage {
+    min-height: auto;
   }
 }
 
@@ -4695,6 +4809,22 @@ input[type="file"]::file-selector-button:hover {
 }
 
 @media (max-width: 720px) {
+  .settings-feishu-connection-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-feishu-connection-grid .settings-field-span-2 {
+    grid-column: span 1;
+  }
+
+  .settings-console-card-header {
+    flex-wrap: wrap;
+  }
+
+  .settings-actions-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .main-content,
   .app-header {
     width: calc(100vw - 20px);

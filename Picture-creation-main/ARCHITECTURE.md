@@ -2,12 +2,12 @@
 
 ## 文档状态
 
-- 文档状态：Confirmed
-- 最近更新时间：2026-03-28
-- 最近更新触发器：现有项目缺少可续接的架构主文档，需要从当前代码而不是旧版本假设中重建模块边界。
+- 文档状态：As-Built
+- 最近更新时间：2026-03-30
+- 最近更新触发器：准备发布 `v0.8.0`，需要将当前真实模块边界、退役入口和发布口径收敛为可交接的架构结论。
 - 仍待确认项：
-  - 创建页智能体是否纳入下一次正式发布边界。
-  - 退役模板中心后的对外交付文档和截图何时统一更新。
+  - 创建页智能体后续是否拆出独立模型与限流配置。
+  - 是否要补一轮新的页面截图来替换当前复用的旧拍摄批次资源。
 - 对应信息源：
   - `app/`、`components/`、`lib/`、`lib/server/` 当前代码
   - `doc/进展记录.md`
@@ -74,7 +74,7 @@ Picture-creation-main/
 | Prompt 与模型层 `lib/gemini.ts` / `lib/templates.ts` | Confirmed | 生成 Prompt、调用 Gemini、归一错误、执行视觉质检 | 输入：任务上下文、模板、图片资产；输出：模型文本/图片结果与诊断 | `@google/genai`、`prompt-quality-enhancements.ts` |
 | 持久化层 `lib/db.ts` | Confirmed | 管理 schema、迁移、设置、任务、品牌、审核与飞书字段 | 输入：领域对象；输出：SQLite 记录与快照 | `node:sqlite`、文件系统 |
 | 历史与详情 UI `app/history/page.tsx` / `components/job-table.tsx` / `components/job-details-client.tsx` | Confirmed | 展示筛选、分页、任务详情、审核、重试和导出 | 输入：查询参数、详情接口；输出：用户操作与排障视图 | `lib/server/workspace/queries.ts`、`/api/jobs/*` |
-| 设置与品牌库 `components/settings-form.tsx` / `components/brand-library-manager.tsx` | Confirmed | 管理模型配置、飞书配置与品牌规则 | 输入：本地设置、品牌数据；输出：保存、测试、增删改 | `/api/settings*`、`/api/brands*` |
+| 设置与品牌库 `components/settings-form.tsx` / `components/brand-library-manager.tsx` | Confirmed | 分别管理运行配置与品牌规则；品牌库已是独立入口 | 输入：本地设置、品牌数据；输出：保存、测试、增删改 | `/api/settings*`、`/api/brands*` |
 | 创建页智能体 `components/create-agent-panel.tsx` / `app/api/agent-chat/route.ts` | Draft | 提供图片分析与提示词建议，并映射回创建表单字段 | 输入：`agentType`、文本、可选图片、临时会话；输出：`assistantText + fieldMapping` | `lib/server/agent-chat/service.ts`、`@google/genai` |
 | 退役模板表面 `app/templates/page.tsx` / `app/api/templates/*` | As-Built | 对旧模板页与模板 API 返回统一退役结果 | 输入：旧页面或旧接口访问；输出：404 / 410 retired 响应 | `lib/server/templates/service.ts` |
 

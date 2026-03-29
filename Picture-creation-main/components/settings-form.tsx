@@ -9,14 +9,17 @@ import {
 } from "@/lib/feishu-field-mapping";
 import type { AppSettings, UiLanguage } from "@/lib/types";
 
+type TestResult = {
+  ok: boolean;
+  message: string;
+};
+
 export function SettingsForm({ initialSettings, language }: { initialSettings: AppSettings; language: UiLanguage }) {
   const [formState, setFormState] = useState(initialSettings);
   const [message, setMessage] = useState("");
-  const [providerTestMessage, setProviderTestMessage] = useState("");
-  const [feishuTestMessage, setFeishuTestMessage] = useState("");
+  const [combinedTestMessage, setCombinedTestMessage] = useState("");
   const [isPending, startTransition] = useTransition();
-  const [isTestingProvider, startProviderTestTransition] = useTransition();
-  const [isTestingFeishu, startFeishuTestTransition] = useTransition();
+  const [isTestingCombined, startCombinedTestTransition] = useTransition();
   const legacyFeishuMappingJson = useMemo(() => getLegacyFeishuFieldMappingJson(), []);
   const recommendedFeishuMappingJson = useMemo(() => getRecommendedFeishuFieldMappingJson(), []);
 
@@ -28,24 +31,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
               gemini: "Gemini / 中转设置",
               feishu: "飞书多维表格同步",
               storage: "素材与任务",
-            },
-            guides: {
-              title: "接入说明",
-              gemini: [
-                "官方 Gemini：只填 API Key，Base URL 留空。",
-                "兼容中转：填写 API Key 和 Base URL，必要时补充请求头 JSON。",
-                "保存后先点“测试 Gemini / 中转”确认可用。",
-              ],
-              feishu: [
-                "在飞书开放平台应用里获取 App ID 和 App Secret。",
-                "从多维表格链接获取 App Token 和 Table ID。",
-                "推荐先保留生成状态、原图、生成图、提示词，再测试飞书连接。",
-              ],
-              storage: [
-                "素材目录用于保存原图、参考图和生成结果。",
-                "并发任务数越高，占用的模型请求和本地资源越多。",
-                "建议先用 2 到 3，稳定后再逐步提高。",
-              ],
             },
             labels: {
               defaultApiKey: "默认 API Key",
@@ -64,37 +49,27 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
               feishuUploadParentType: "飞书上传 parent_type",
               feishuFieldMappingJson: "多维表格字段映射 JSON",
             },
+            hero: {
+              title: "设置中心",
+              subtitle: "统一管理 Gemini、飞书同步与本地素材任务。",
+              idleFeedback: "点击“全局连接测试”后，会在这里显示紧凑测试结果。",
+            },
             actions: {
-              save: "保存设置",
+              save: "保存全部设置",
               saving: "保存中...",
               saved: "设置已保存",
-              saveFailed: "保存失败。",
-              testProvider: "测试 Gemini / 中转",
-              testingProvider: "测试中...",
+              saveFailed: "保存失败",
+              testAllConnections: "全局连接测试",
+              testingAllConnections: "测试中...",
+              testAllOk: "全局连接测试通过",
+              testAllFailed: "全局连接测试失败",
               providerOk: "Gemini / 中转连接成功",
               providerFailed: "Gemini / 中转连接失败",
-              testFeishu: "测试飞书连接",
-              testingFeishu: "测试中...",
               feishuOk: "飞书连接成功",
               feishuFailed: "飞书连接失败",
               unknownError: "未知错误",
               fillRecommendedMapping: "填入推荐模板",
               formatMapping: "格式化映射",
-            },
-            hints: {
-              baseUrl: "留空表示使用 Google 官方 Gemini API；如使用中转站，请填写对方提供的 base_url。",
-              headers: '示例：{"Authorization":"Bearer your-key"}。如不需要额外请求头，可留空。',
-              version: "大多数 Gemini 兼容中转使用 v1beta。",
-              storageDir: "建议使用本机稳定磁盘路径，方便统一备份与迁移。",
-              maxConcurrency: "并发越高，任务吞吐越快，但也更容易触发中转限流或占满本机带宽。",
-              saveSummary: "先分别测试 Gemini / 飞书，再统一保存整页设置。",
-              feishuEnable: "开启后，生成成功的图片会自动创建飞书多维表格记录，并上传到图片字段。",
-              feishuToken: "可在飞书开放平台和多维表格链接中获取。",
-              feishuParentType: "默认使用 bitable_image。若你的应用要求不同，可在这里修改。",
-              feishuMapping:
-                "只会写入你配置过的字段。飞书第一列不要使用附件/图片字段，建议顺序设置为：生成状态、原图、生成图、提示词。旧表如需继续保留，也仍兼容 platform / country 等旧字段。",
-              feishuSupportedFields:
-                "支持字段键：title、sourceImage、image、mode、platform、country、language、promptTranslation、promptOptimization、typeSummary、ratioSummary、resolutionSummary、sizeSummary、statusSummary、ratio、resolution、requestedSize、actualSize、status、prompt、negativePrompt、createdAt、jobId、itemId。",
             },
           }
         : {
@@ -102,24 +77,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
               gemini: "Gemini / relay settings",
               feishu: "Feishu Bitable sync",
               storage: "Assets and queue",
-            },
-            guides: {
-              title: "Quick setup",
-              gemini: [
-                "Official Gemini: fill only the API key and leave Base URL empty.",
-                "Relay mode: fill API key and Base URL, then add headers JSON only if required.",
-                'Save first, then run "Test Gemini / relay".',
-              ],
-              feishu: [
-                "Get the App ID and App Secret from the Feishu developer console.",
-                "Get the App Token and Table ID from your Bitable URL.",
-                "Start with generation status, source image, generated image, and prompt before testing the connection.",
-              ],
-              storage: [
-                "The asset directory stores source images, references, and generated outputs.",
-                "Higher concurrency increases throughput but also uses more relay quota and local resources.",
-                "Start with 2 or 3 and raise it only after the workflow stays stable.",
-              ],
             },
             labels: {
               defaultApiKey: "Default API key",
@@ -138,37 +95,27 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
               feishuUploadParentType: "Feishu upload parent_type",
               feishuFieldMappingJson: "Bitable field mapping JSON",
             },
+            hero: {
+              title: "Settings Center",
+              subtitle: "Manage Gemini, Feishu sync, and local runtime controls in one place.",
+              idleFeedback: "Run the global connection check to see compact status feedback here.",
+            },
             actions: {
-              save: "Save settings",
+              save: "Save all settings",
               saving: "Saving...",
               saved: "Settings saved",
-              saveFailed: "Save failed.",
-              testProvider: "Test Gemini / relay",
-              testingProvider: "Testing...",
+              saveFailed: "Save failed",
+              testAllConnections: "Global connection test",
+              testingAllConnections: "Testing...",
+              testAllOk: "Global connection test passed",
+              testAllFailed: "Global connection test failed",
               providerOk: "Gemini / relay connection succeeded",
               providerFailed: "Gemini / relay connection failed",
-              testFeishu: "Test Feishu connection",
-              testingFeishu: "Testing...",
               feishuOk: "Feishu connection succeeded",
               feishuFailed: "Feishu connection failed",
               unknownError: "Unknown error",
               fillRecommendedMapping: "Use recommended template",
               formatMapping: "Format mapping",
-            },
-            hints: {
-              baseUrl: "Leave blank for the official Google Gemini API. For a relay, paste the provider's base_url here.",
-              headers: 'Example: {"Authorization":"Bearer your-key"}. Leave empty if your relay does not require extra headers.',
-              version: "Most Gemini-compatible relays use v1beta.",
-              storageDir: "Use a stable local disk path so assets are easy to back up and migrate.",
-              maxConcurrency: "Higher concurrency speeds up batches, but it also increases the chance of relay throttling or local resource pressure.",
-              saveSummary: "Test Gemini and Feishu in their own cards first, then save the whole settings page.",
-              feishuEnable: "When enabled, successful generated images will automatically create Feishu Bitable records and upload to the image field.",
-              feishuToken: "You can find these in the Feishu developer console and the Bitable URL.",
-              feishuParentType: "Defaults to bitable_image. Change it only if your Feishu app requires another upload parent type.",
-              feishuMapping:
-                "Only mapped fields will be written. Do not use an attachment or image field as the first Feishu column. Recommended order: generation status, source image, generated image, prompt. Older tables can still keep legacy fields such as platform / country if needed.",
-              feishuSupportedFields:
-                "Supported keys: title, sourceImage, image, mode, platform, country, language, promptTranslation, promptOptimization, typeSummary, ratioSummary, resolutionSummary, sizeSummary, statusSummary, ratio, resolution, requestedSize, actualSize, status, prompt, negativePrompt, createdAt, jobId, itemId.",
             },
           },
     [language],
@@ -188,16 +135,32 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
     [language],
   );
 
+  const combinedFeedback = combinedTestMessage || message;
+  const globalFeedback = combinedFeedback;
+  const globalFeedbackTone = useMemo(() => {
+    if (!globalFeedback) {
+      return "";
+    }
+
+    const successPrefixes = [text.actions.saved, text.actions.testAllOk];
+    const failedPrefixes = [text.actions.saveFailed, text.actions.testAllFailed];
+    const matchesPrefix = (prefix: string) => globalFeedback === prefix || globalFeedback.startsWith(`${prefix}:`);
+
+    if (successPrefixes.some(matchesPrefix)) {
+      return "is-success";
+    }
+    if (failedPrefixes.some(matchesPrefix)) {
+      return "is-danger";
+    }
+
+    return message ? "is-danger" : "is-info";
+  }, [globalFeedback, message, text.actions.saveFailed, text.actions.saved, text.actions.testAllFailed, text.actions.testAllOk]);
+
   function patchSettings(patch: Partial<AppSettings>) {
     setFormState((current) => ({ ...current, ...patch }));
   }
 
-  async function handleJsonRequest(
-    url: string,
-    onMessage: (nextMessage: string) => void,
-    okPrefix: string,
-    failedPrefix: string,
-  ) {
+  async function handleJsonRequest(url: string, okPrefix: string, failedPrefix: string): Promise<TestResult> {
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -208,16 +171,21 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
 
     const body = (await response.json().catch(() => null)) as { error?: string; result?: string } | null;
     if (!response.ok) {
-      onMessage(`${failedPrefix}: ${body?.error ?? text.actions.unknownError}`);
-      return;
+      return {
+        ok: false,
+        message: `${failedPrefix}: ${body?.error ?? text.actions.unknownError}`,
+      };
     }
 
-    onMessage(`${okPrefix}: ${body?.result ?? "OK"}`);
+    return {
+      ok: true,
+      message: `${okPrefix}: ${body?.result ?? "OK"}`,
+    };
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function submitSettings() {
     setMessage("");
+    setCombinedTestMessage("");
 
     startTransition(async () => {
       const response = await fetch("/api/settings", {
@@ -230,7 +198,7 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as { error?: string } | null;
-        setMessage(body?.error ?? text.actions.saveFailed);
+        setMessage(`${text.actions.saveFailed}: ${body?.error ?? text.actions.unknownError}`);
         return;
       }
 
@@ -242,61 +210,63 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
     });
   }
 
-  function handleProviderTest() {
-    setProviderTestMessage("");
-    startProviderTestTransition(async () => {
-      await handleJsonRequest(
-        "/api/settings/test",
-        setProviderTestMessage,
-        text.actions.providerOk,
-        text.actions.providerFailed,
-      );
-    });
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCombinedTestMessage("");
+    void submitSettings();
   }
 
-  function handleFeishuTest() {
-    setFeishuTestMessage("");
-    startFeishuTestTransition(async () => {
-      await handleJsonRequest(
-        "/api/settings/test-feishu",
-        setFeishuTestMessage,
-        text.actions.feishuOk,
-        text.actions.feishuFailed,
-      );
+  function handleCombinedConnectionTest() {
+    setMessage("");
+    setCombinedTestMessage("");
+
+    startCombinedTestTransition(async () => {
+      const providerResult = await handleJsonRequest("/api/settings/test", text.actions.providerOk, text.actions.providerFailed);
+      const feishuResult = await handleJsonRequest("/api/settings/test-feishu", text.actions.feishuOk, text.actions.feishuFailed);
+      const summaryPrefix = providerResult.ok && feishuResult.ok ? text.actions.testAllOk : text.actions.testAllFailed;
+      setCombinedTestMessage(`${summaryPrefix}: ${providerResult.message} | ${feishuResult.message}`);
     });
   }
 
   function handleFillRecommendedMapping() {
     patchSettings({ feishuFieldMappingJson: recommendedFeishuMappingJson });
-    setFeishuTestMessage("");
+    setCombinedTestMessage("");
     setMessage("");
   }
 
   function handleFillLegacyMapping() {
     patchSettings({ feishuFieldMappingJson: legacyFeishuMappingJson });
-    setFeishuTestMessage("");
+    setCombinedTestMessage("");
     setMessage("");
   }
 
   function handleFormatMapping() {
     try {
       patchSettings({ feishuFieldMappingJson: formatFeishuFieldMapping(formState.feishuFieldMappingJson) });
-      setFeishuTestMessage("");
+      setCombinedTestMessage("");
       setMessage("");
     } catch (error) {
-      setFeishuTestMessage(error instanceof Error ? error.message : text.actions.unknownError);
+      const reason = error instanceof Error ? error.message : text.actions.unknownError;
+      setCombinedTestMessage(`${text.actions.testAllFailed}: ${text.actions.feishuFailed}: ${reason}`);
     }
   }
 
   return (
     <form className="settings-form-panel settings-form-shell settings-form-shell-liquid" onSubmit={handleSubmit}>
-      <div className="settings-overview-grid">
-        <section className="panel settings-section settings-card is-info">
-          <div className="settings-section-header">
+      <header className="panel settings-hero">
+        <div className="settings-hero-copy">
+          <h1 className="settings-hero-title">{text.hero.title}</h1>
+          <p className="helper">{text.hero.subtitle}</p>
+        </div>
+      </header>
+
+      <div className="settings-overview-grid settings-l-layout">
+        <section className="panel settings-section settings-card settings-card-gemini is-info">
+          <div className="settings-section-header settings-console-card-header">
             <h3>{text.sections.gemini}</h3>
           </div>
           <div className="settings-fields-grid">
-            <label className="settings-field-span-2">
+            <label>
               <span>{text.labels.defaultApiKey}</span>
               <input
                 type="password"
@@ -304,7 +274,7 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
                 onChange={(event) => patchSettings({ defaultApiKey: event.target.value })}
               />
             </label>
-            <label className="settings-field-span-2">
+            <label>
               <span>{text.labels.defaultApiBaseUrl}</span>
               <input
                 placeholder="https://your-relay-host.example"
@@ -336,59 +306,28 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
             <label className="settings-field-span-2">
               <span>{text.labels.defaultApiHeaders}</span>
               <textarea
-                rows={4}
+                rows={6}
                 placeholder='{"Authorization":"Bearer your-key"}'
                 value={formState.defaultApiHeaders}
                 onChange={(event) => patchSettings({ defaultApiHeaders: event.target.value })}
               />
             </label>
           </div>
-          <div className="settings-card-footer">
-            <button className="ghost-button" disabled={isTestingProvider} onClick={handleProviderTest} type="button">
-              {isTestingProvider ? text.actions.testingProvider : text.actions.testProvider}
-            </button>
-            {providerTestMessage ? <p className="helper settings-feedback is-info">{providerTestMessage}</p> : null}
-          </div>
         </section>
 
-        <section className="panel settings-section settings-card settings-card-compact is-accent">
-          <div className="settings-section-header">
-            <h3>{text.sections.storage}</h3>
-          </div>
-          <div className="settings-fields-grid">
-            <label className="settings-field-span-2">
-              <span>{text.labels.storageDir}</span>
-              <input
-                value={formState.storageDir}
-                onChange={(event) => patchSettings({ storageDir: event.target.value })}
-              />
-            </label>
-            <label>
-              <span>{text.labels.maxConcurrency}</span>
-              <input
-                min={1}
-                max={6}
-                type="number"
-                value={formState.maxConcurrency}
-                onChange={(event) => patchSettings({ maxConcurrency: Number(event.target.value) || 1 })}
-              />
-            </label>
-          </div>
-        </section>
-
-        <section className="panel settings-section settings-card settings-card-wide is-danger">
-          <div className="settings-section-header">
+        <section className="panel settings-section settings-card settings-card-feishu is-danger">
+          <div className="settings-section-header settings-console-card-header">
             <h3>{text.sections.feishu}</h3>
           </div>
-          <label className="settings-checkbox-row">
-            <input
-              checked={formState.feishuSyncEnabled}
-              onChange={(event) => patchSettings({ feishuSyncEnabled: event.target.checked })}
-              type="checkbox"
-            />
-            <span>{text.labels.feishuSyncEnabled}</span>
-          </label>
-          <div className="settings-fields-grid">
+          <div className="settings-fields-grid settings-feishu-connection-grid">
+            <label className="settings-checkbox-row settings-field-span-2">
+              <input
+                checked={formState.feishuSyncEnabled}
+                onChange={(event) => patchSettings({ feishuSyncEnabled: event.target.checked })}
+                type="checkbox"
+              />
+              <span>{text.labels.feishuSyncEnabled}</span>
+            </label>
             <label>
               <span>{text.labels.feishuAppId}</span>
               <input value={formState.feishuAppId} onChange={(event) => patchSettings({ feishuAppId: event.target.value })} />
@@ -422,7 +361,9 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
                 onChange={(event) => patchSettings({ feishuUploadParentType: event.target.value })}
               />
             </label>
-            <label className="settings-field-span-2">
+          </div>
+          <div className="settings-fields-grid">
+            <label className="settings-field-span-2 settings-feishu-mapping-field">
               <div className="settings-field-toolbar">
                 <span>{text.labels.feishuFieldMappingJson}</span>
                 <div className="button-row settings-field-actions">
@@ -438,30 +379,66 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
                 </div>
               </div>
               <textarea
-                rows={12}
+                rows={10}
                 placeholder={recommendedFeishuMappingJson}
                 value={formState.feishuFieldMappingJson}
                 onChange={(event) => patchSettings({ feishuFieldMappingJson: event.target.value })}
               />
             </label>
           </div>
-          <div className="settings-card-footer">
-            <button className="ghost-button" disabled={isTestingFeishu} onClick={handleFeishuTest} type="button">
-              {isTestingFeishu ? text.actions.testingFeishu : text.actions.testFeishu}
-            </button>
-            {feishuTestMessage ? <p className="helper settings-feedback is-danger">{feishuTestMessage}</p> : null}
+        </section>
+
+        <section className="panel settings-section settings-card settings-card-storage is-accent">
+          <div className="settings-section-header settings-console-card-header">
+            <h3>{text.sections.storage}</h3>
+          </div>
+          <div className="settings-fields-grid settings-storage-grid">
+            <label>
+              <span>{text.labels.storageDir}</span>
+              <input
+                value={formState.storageDir}
+                onChange={(event) => patchSettings({ storageDir: event.target.value })}
+              />
+            </label>
+            <label>
+              <span>{text.labels.maxConcurrency}</span>
+              <input
+                min={1}
+                max={6}
+                type="number"
+                value={formState.maxConcurrency}
+                onChange={(event) => patchSettings({ maxConcurrency: Number(event.target.value) || 1 })}
+              />
+            </label>
           </div>
         </section>
       </div>
 
-      <section className="panel settings-submit-panel is-accent">
-        <div>
-          <strong>{text.actions.save}</strong>
-          {message ? <p className="helper success-text settings-feedback is-success">{message}</p> : null}
+      <section className="panel settings-actions-footer">
+        <div className="settings-actions-status">
+          {globalFeedback ? (
+            <p className={`helper settings-feedback settings-actions-feedback ${globalFeedbackTone}`}>{globalFeedback}</p>
+          ) : (
+            <p className="helper settings-actions-feedback">{text.hero.idleFeedback}</p>
+          )}
         </div>
-        <button className="primary-button" disabled={isPending} type="submit">
-          {isPending ? text.actions.saving : text.actions.save}
-        </button>
+        <div className="settings-actions-row">
+          <button
+            className="primary-button settings-action-button settings-action-button-test"
+            disabled={isPending || isTestingCombined}
+            onClick={handleCombinedConnectionTest}
+            type="button"
+          >
+            {isTestingCombined ? text.actions.testingAllConnections : text.actions.testAllConnections}
+          </button>
+          <button
+            className="primary-button settings-action-button settings-action-button-save"
+            disabled={isPending || isTestingCombined}
+            type="submit"
+          >
+            {isPending ? text.actions.saving : text.actions.save}
+          </button>
+        </div>
       </section>
     </form>
   );

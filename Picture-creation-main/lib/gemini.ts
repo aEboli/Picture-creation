@@ -4757,13 +4757,13 @@ async function createWorkflowFallbackCopyBundle(input: {
       optimizedPrompt: withNegativeConstraints(optimizedPrompt, negativePrompt, input.mode),
       negativePrompt,
       workflowWarning,
-      title: input.productName || "参考图复刻",
+      title: input.productName || "Reference remake",
       subtitle: "",
       highlights: [],
       detailAngles: [],
       painPoints: [],
       cta: "",
-      posterHeadline: input.productName || "参考图复刻",
+      posterHeadline: input.productName || "Reference remake",
       posterSubline: "",
     };
   }

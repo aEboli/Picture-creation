@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$OutputRoot = (Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..')) 'release'),
   [switch]$SkipBuild,
   [switch]$SanitizeSecrets,
@@ -65,10 +65,12 @@ if (Test-Path $nestedReleaseDir) {
 
 $cleanupItems = @(
   '.git',
+  '.learnings',
   '.codex',
   '.playwright-cli',
   '.runtime',
   'AGENTS.md',
+  'ARCHITECTURE.md',
   'app',
   'components',
   'doc',
@@ -84,6 +86,9 @@ $cleanupItems = @(
   '.gitignore',
   'next.config.ts',
   'package-lock.json',
+  'PAGE_FRAME.md',
+  'PRD.md',
+  'PROJECT_STATE.md',
   'README.md',
   'reset-next-dev.bat',
   'run-dev-server.bat',
@@ -95,6 +100,7 @@ $cleanupItems = @(
   'start-prod.bat',
   'tsconfig.json',
   'tsconfig.tsbuildinfo',
+  'TECH_DECISIONS.md',
   '一键启动并打开网页.bat',
   '使用说明-简体中文.md',
   '启动开发版.bat',
@@ -245,7 +251,7 @@ $launcher = @(
   'pause',
   'exit /b 0'
 )
-Set-Content -Path (Join-Path $releaseDir '启动网站.bat') -Value $launcher -Encoding ASCII
+Set-Content -LiteralPath (Join-Path $releaseDir '启动网站.bat') -Value $launcher -Encoding ASCII
 
 $localInstaller = @(
   '@echo off',
@@ -261,14 +267,14 @@ $localInstaller = @(
   'echo Installed to: %INSTALL_DIR%',
   'pause'
 )
-Set-Content -Path (Join-Path $releaseDir '安装到本机.bat') -Value $localInstaller -Encoding ASCII
+Set-Content -LiteralPath (Join-Path $releaseDir '安装到本机.bat') -Value $localInstaller -Encoding ASCII
 
 $ipHelper = @(
   '@echo off',
   'ipconfig | findstr /R /C:"IPv4"',
   'pause'
 )
-Set-Content -Path (Join-Path $releaseDir '查看局域网地址.bat') -Value $ipHelper -Encoding ASCII
+Set-Content -LiteralPath (Join-Path $releaseDir '查看局域网地址.bat') -Value $ipHelper -Encoding ASCII
 
 $readme = @(
   'Picture-creation - Green release instructions',
@@ -281,7 +287,7 @@ $readme = @(
   '6. Default data is stored in the local data folder.',
   '7. Safe release mode clears the default API key and custom auth headers from the packaged copy.'
 )
-Set-Content -Path (Join-Path $releaseDir 'README-部署-简体中文.txt') -Value $readme -Encoding UTF8
+Set-Content -LiteralPath (Join-Path $releaseDir 'README-部署-简体中文.txt') -Value $readme -Encoding UTF8
 
 Write-Host "Release created at: $releaseDir" -ForegroundColor Green
 if (Test-Path $bundledNodePath) {

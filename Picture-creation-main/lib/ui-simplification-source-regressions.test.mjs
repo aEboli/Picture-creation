@@ -125,3 +125,82 @@ test("header source groups the create-agent entry and primary nav inside a cente
     /@media \(max-width:\s*720px\)\s*\{[\s\S]*\.app-header-center-cluster\s*\{[\s\S]*flex-wrap:\s*wrap;/,
   );
 });
+
+test("settings source uses centered hero, L-shaped desktop cards, and dual global footer actions", () => {
+  const settingsForm = read(sourcePath("components", "settings-form.tsx"));
+  const cssContent = read(sourcePath("app", "ui-ux-pro-max.css"));
+
+  assert.match(settingsForm, /settings-hero/);
+  assert.match(settingsForm, /settings-hero-title/);
+  assert.match(settingsForm, /settings-l-layout/);
+  assert.match(settingsForm, /settings-card settings-card-gemini is-info/);
+  assert.match(settingsForm, /settings-card settings-card-feishu is-danger/);
+  assert.match(settingsForm, /settings-card settings-card-storage is-accent/);
+  assert.match(settingsForm, /settings-actions-footer/);
+  assert.match(settingsForm, /settings-actions-row/);
+  assert.match(settingsForm, /settings-action-button settings-action-button-test/);
+  assert.match(settingsForm, /settings-action-button settings-action-button-save/);
+  assert.match(settingsForm, /type="submit"[\s\S]*text\.actions\.save/);
+  assert.match(settingsForm, /onClick=\{handleCombinedConnectionTest\}[\s\S]*text\.actions\.testAllConnections/);
+  assert.match(settingsForm, /function handleCombinedConnectionTest\(\)/);
+  assert.match(settingsForm, /await handleJsonRequest\([\s\S]*"\/api\/settings\/test"/);
+  assert.match(settingsForm, /await handleJsonRequest\([\s\S]*"\/api\/settings\/test-feishu"/);
+  assert.match(settingsForm, /setCombinedTestMessage\(/);
+  assert.match(settingsForm, /const combinedFeedback = combinedTestMessage \|\| message;/);
+  assert.doesNotMatch(settingsForm, /settings-console-strip/);
+  assert.doesNotMatch(settingsForm, /settings-console-grid/);
+  assert.doesNotMatch(settingsForm, /settings-card-save-button/);
+  assert.doesNotMatch(settingsForm, /function handleCardSave\(\)/);
+  assert.doesNotMatch(settingsForm, /text\.actions\.testProvider/);
+  assert.doesNotMatch(settingsForm, /text\.actions\.testFeishu/);
+  assert.doesNotMatch(settingsForm, /settings-submit-strip/);
+  assert.match(settingsForm, /function handleSubmit\(event: FormEvent<HTMLFormElement>\)[\s\S]*void submitSettings\(\);/);
+  assert.match(settingsForm, /const globalFeedback = combinedFeedback;/);
+  assert.match(
+    settingsForm,
+    /const successPrefixes = \[text\.actions\.saved, text\.actions\.testAllOk\];/,
+  );
+  assert.match(
+    settingsForm,
+    /const failedPrefixes = \[text\.actions\.saveFailed, text\.actions\.testAllFailed\];/,
+  );
+  assert.match(settingsForm, /const matchesPrefix = \(prefix: string\) => globalFeedback === prefix \|\| globalFeedback\.startsWith\(`\$\{prefix\}:`\);/);
+  assert.match(settingsForm, /function handleSubmit[\s\S]*setCombinedTestMessage\(""\);/);
+  assert.match(
+    settingsForm,
+    /function handleFormatMapping\(\)[\s\S]*setCombinedTestMessage\(`\$\{text\.actions\.testAllFailed\}: \$\{text\.actions\.feishuFailed\}: \$\{reason\}`\);/,
+  );
+
+  assert.match(cssContent, /\.settings-hero\s*\{/);
+  assert.match(cssContent, /\.settings-hero-title\s*\{/);
+  assert.match(cssContent, /\.settings-l-layout\s*\{/);
+  assert.match(cssContent, /\.settings-card-gemini\s*\{/);
+  assert.match(cssContent, /\.settings-card-feishu\s*\{/);
+  assert.match(cssContent, /\.settings-card-storage\s*\{/);
+  assert.match(cssContent, /\.settings-actions-footer\s*\{/);
+  assert.match(cssContent, /\.settings-actions-row\s*\{/);
+  assert.match(cssContent, /\.settings-action-button\s*\{/);
+  assert.match(cssContent, /\.settings-l-layout\s*\{[\s\S]*grid-template-areas:\s*"gemini feishu"\s*"gemini storage";/);
+  assert.doesNotMatch(cssContent, /\.settings-console-strip\s*\{/);
+  assert.doesNotMatch(cssContent, /\.settings-console-grid\s*\{/);
+  assert.doesNotMatch(cssContent, /\.settings-submit-strip\s*\{/);
+  assert.doesNotMatch(cssContent, /\.settings-card-save-button\s*\{/);
+  assert.doesNotMatch(cssContent, /\.settings-card-footer-actions\s*\{/);
+  assert.doesNotMatch(cssContent, /\.settings-card-wide-row\s*\{/);
+  assert.match(
+    cssContent,
+    /@media \(max-width:\s*1023px\)\s*\{[\s\S]*\.settings-l-layout\s*\{[\s\S]*grid-template-areas:\s*"gemini"\s*"feishu"\s*"storage";/,
+  );
+  assert.match(
+    cssContent,
+    /@media \(max-width:\s*720px\)\s*\{[\s\S]*\.settings-feishu-connection-grid\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+  );
+  assert.match(
+    cssContent,
+    /@media \(max-width:\s*720px\)\s*\{[\s\S]*\.settings-feishu-connection-grid\s+\.settings-field-span-2\s*\{[\s\S]*grid-column:\s*span 1;/,
+  );
+  assert.match(
+    cssContent,
+    /@media \(max-width:\s*720px\)\s*\{[\s\S]*\.settings-actions-row\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+  );
+});

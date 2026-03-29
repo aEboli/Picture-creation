@@ -2,129 +2,146 @@
 
 ## 文档状态
 
-- 文档状态：Confirmed
-- 最近更新时间：2026-03-29
-- 最近更新触发器：继续执行“设置页重排、品牌库独立入口与头部中区收口”计划后，项目真实页面框架发生变化，需要回填状态文档。
-- 仍待确认项：
-  - 对外交付文档是否在下一轮统一同步到“品牌库独立页 + 模板中心退役 + 创建页智能体 + 当前截图”。
-  - 当前未提交的大量功能改动是否会形成新的版本号和发布说明。
+- 文档状态：As-Built
+- 最近更新时间：2026-03-30
+- 最近更新触发器：准备发布 `v0.8.0`，需要把当前代码、版本文档和 GitHub 发布口径收敛到同一状态摘要。
 - 对应信息源：
-  - `components/navigation.tsx`
-  - `app/settings/page.tsx`
-  - `app/brands/page.tsx`
+  - `components/settings-form.tsx`
+  - `components/create-job-form.tsx`
+  - `components/job-details-client.tsx`
+  - `app/ui-ux-pro-max.css`
+  - `lib/gemini.ts`
+  - `lib/create-agent-source-regressions.test.mjs`
+  - `lib/job-details-client-safety.test.mjs`
+  - `lib/gemini-copy-bundle-fallback.test.mjs`
+  - `lib/ui-simplification-source-regressions.test.mjs`
   - `doc/进展记录.md`
-  - 当前代码与路由
 
 ## 当前目标
 
-- 这轮要完成什么：
-  - 完成品牌库独立入口、设置页收口和头部中区整理
-  - 把页面框架变化同步到状态文档和进展记录
+- 这轮已完成：
+  - 将项目版本从 `v0.7.0` 提升到 `v0.8.0`
+  - 同步 README、使用说明、PRD、版本说明与截图目录到当前真实产品口径
+  - 明确本次发布边界包含品牌库独立入口、设置中心收口、创建页和详情页细节修正
 
 ## 当前切片
 
-- 当前正在实现/验证的最小切片：
-  - 一级导航新增 `品牌库`
-  - 设置页只保留系统设置
-  - 品牌库迁移到独立 `/brands`
-  - 头部把“智能体 + 主导航”收口到中区一组
+- 当前最新完成的切片：
+  - `v0.8.0` 版本号与发布资料同步
+  - 设置页 Hero + L 型三卡设置台
+  - 底部全局动作区与聚合状态反馈
+  - 创建页离开不再弹出草稿中断确认
+  - 任务详情 copy 摘要面板编号化
+  - `reference-remix` 缺省标题文案清洗
+  - 1023 / 720 两档响应式收口
 
 ## 范围边界
 
-- 本轮允许修改：
-  - `components/navigation.tsx`
-  - `app/settings/page.tsx`
-  - `app/brands/page.tsx`
+- 本轮已修改：
+  - `.gitignore`
   - `app/ui-ux-pro-max.css`
-  - 相关源码回归测试
+  - `components/create-job-form.tsx`
+  - `components/job-details-client.tsx`
+  - `components/settings-form.tsx`
+  - `README.md`
+  - `Readme/PRD-Picture-creation.md`
+  - `Readme/使用说明-Picture-creation.md`
+  - `Readme/版本说明-v0.8.0.md`
+  - `Readme/assets/picture-creation-v0.8.0/*`
+  - `lib/create-agent-source-regressions.test.mjs`
+  - `lib/gemini-copy-bundle-fallback.test.mjs`
+  - `lib/gemini.ts`
+  - `lib/job-details-client-safety.test.mjs`
+  - `lib/ui-simplification-source-regressions.test.mjs`
+  - `PRD.md`
+  - `ARCHITECTURE.md`
+  - `TECH_DECISIONS.md`
   - `PAGE_FRAME.md`
   - `PROJECT_STATE.md`
   - `doc/进展记录.md`
-- 本轮不允许修改：
-  - 新增后端 API
-  - 生成流程逻辑
-  - 打包脚本、版本号与发布产物
-
-## 文档待补债务
-
-- [ ] `README.md` 仍未同步到“品牌库独立页 + 模板中心退役”后的最新导航结构
-- [ ] `Readme/使用说明-Picture-creation.md` 仍未覆盖 `/brands` 独立页与设置页收口后的页面说明
-- [ ] `Readme/PRD-Picture-creation.md` 仍以 `v0.7.0` 交付边界为主，尚未覆盖这轮页面框架变化
-- [ ] 当前截图资产未反映 `/brands` 页和头部中区新布局
+  - `package.json`
+  - `package-lock.json`
+  - `scripts/package-release.ps1`
+- 本轮未修改：
+  - 后端 API
+  - 设置数据结构
+  - 品牌库独立页与主导航结构
+  - 任务详情数据查询链路
+  - 创建页智能体会话分桶与草稿存储链路
+  - 其它业务逻辑
 
 ## 本轮新增确认
 
-- 已确认事项 1：主导航当前为 `总览 / 创作台 / 历史记录 / 设置 / 品牌库`
-- 已确认事项 2：`/settings` 当前只承载 `SettingsForm`，品牌库不再混入设置页
-- 已确认事项 3：`/brands` 已成为独立一级页面，直接复用 `BrandLibraryManager`
-- 已确认事项 4：品牌库页面继续复用现有 settings/brands 查询层，不新增后端 API
-- 已确认事项 5：头部当前改为左侧统计、中区“智能体 + 主导航”、右侧系统状态与语言切换
-- 已确认事项 6：`CreateAgentPanel` 仍然只在 `/create` 出现，非创建页不保留空占位
-- 已确认事项 7：`/templates` 页面与模板 API 继续维持退役口径
-- 已确认事项 8：创建主路径默认仍收口到 `strategyWorkflowMode = "quick"`
-
-## 下一次回填节点
-
-- 触发节点：
-  - 下一次版本号或发布说明更新
-  - README/Readme 截图与页面说明统一更新
-  - 浏览器级烟测补齐后，需要把验证结论回填
-  - 当前大工作区改动被切分成明确的提交或版本范围
-- 预计要更新的文档：
-  - `README.md`
-  - `Readme/使用说明-Picture-creation.md`
-  - `Readme/PRD-Picture-creation.md`
-  - `Readme/版本说明-*.md`
-  - `PAGE_FRAME.md`
-  - `PROJECT_STATE.md`
-
-## 已冻结决策
-
-- 决策 1：当前产品继续坚持本地/LAN 优先，不引入账号鉴权体系
-- 决策 2：模板中心保持退役状态，除非出现明确的新设计和新交付边界
-- 决策 3：创建页智能体只负责“建议与字段映射”，不直接提交任务
-- 决策 4：智能体设置与全局设置分离，单独走 `/api/agent-settings`
-- 决策 5：品牌库从设置页拆出，作为独立一级入口维护
+- 已确认事项 1：设置页已从“松散卡片 + 大量留白”收口为紧凑控制台布局
+- 已确认事项 2：桌面端结构固定为：
+  - 第一排 `Gemini / Relay` 主卡 + `飞书同步` 侧卡
+  - 第二排 `素材与任务` 侧卡位
+- 已确认事项 3：顶部为居中的 Hero 区，仅保留标题与副标题
+- 已确认事项 4：设置页不再提供卡内保存或单卡测试，统一改为底部动作区：
+  - `全局连接测试`
+  - `保存全部设置`
+- 已确认事项 5：全局连接测试会顺序测试 `Gemini / 中转` 与 `飞书`，并聚合为一条状态反馈
+- 已确认事项 6：`素材与任务` 卡仍然只有字段编辑，不引入额外测试 API
+- 已确认事项 7：创建页离开当前页面时不再弹出“未完成草稿”确认提示
+- 已确认事项 8：任务详情 copy 摘要面板主标题改为顺序编号，避免回落到产品名
+- 已确认事项 9：`reference-remix` 在缺少分析结果时，缺省标题与海报标题统一回落为 `Reference remake`
+- 已确认事项 10：响应式规则已补齐：
+  - `<=1023px` 单列堆叠顺序为 `gemini -> feishu -> storage`
+  - `<=720px` 飞书连接区与底部动作区都允许单列回落
+- 已确认事项 11：对外交付文档已切到 `v0.8.0`，并同步品牌库独立入口、设置中心与模板中心退役口径
+- 已确认事项 12：`.learnings/` 已排除出源码仓库发布范围，避免把本地诊断内容带上 GitHub
+- 已确认事项 13：安全发布脚本已补齐：
+  - 发布目录不再夹带 `.learnings/` 与内部主文档
+  - `package-release.ps1` 已转为 UTF-8 BOM，避免 Windows PowerShell 下中文文件名乱码
 
 ## 已完成
 
-- [x] 主导航新增 `品牌库` 一级入口
-- [x] 新增独立 `/brands` 页面并复用 `BrandLibraryManager`
-- [x] 设置页移除品牌库，只保留 `SettingsForm`
-- [x] 头部把“智能体 + 主导航”收口到中区一组
-- [x] 为页面框架变化补齐源码回归测试
-- [x] 跑通 `node --test lib/ui-simplification-source-regressions.test.mjs`
-- [x] 跑通 `node --test lib/create-agent-source-regressions.test.mjs`
-- [x] 跑通 `npm run typecheck`
-- [x] 同步 `PAGE_FRAME.md`、`PROJECT_STATE.md` 与 `doc/进展记录.md`
+- [x] 设置页结构重排为紧凑控制台
+- [x] 设置页桌面端 L 型网格与全局动作区定型
+- [x] 全局连接测试与保存全部设置接入统一反馈区
+- [x] 创建页离开拦截逻辑移除
+- [x] 详情页 copy 摘要面板编号展示落地
+- [x] `reference-remix` 缺省标题文案清洗
+- [x] 相关源码回归补齐并通过
+- [x] `v0.8.0` 版本资料与截图目录同步
+- [x] `v0.8.0` 安全发布包与安装器本地生成成功
+- [x] `npm run typecheck` 通过
 
 ## 待办
 
-- [ ] 统一更新 `README.md` 与 `Readme/` 中仍然落后的导航、页面和截图说明
-- [ ] 补一轮浏览器级烟测，确认 `/create`、`/settings`、`/brands` 视觉落地符合预期
-- [ ] 对当前工作区的大量未提交功能改动做一次版本范围切分
+- [ ] 补浏览器级烟测或截图验收，确认真实视觉留白明显收敛
+- [ ] 如需更精确的对外展示，可补拍一轮新的设置页 / 品牌库截图
+- [ ] 评估创建页移除离开拦截后，是否还需要更轻量的草稿保护提示
+- [ ] 将本地分支接到 GitHub 仓库并完成 tag / Release 收尾
 
 ## 风险和阻塞
 
-- 风险：当前主文档已同步，但对外交付文档与截图仍旧漂移
-- 风险：工作区本身较脏，规格复核容易把历史未提交改动混进本轮范围
-- 阻塞：这轮完成的是源码回归和类型验证，还没有补浏览器级实机验收
+- 风险：当前验证以源码回归和类型检查为主，尚未补浏览器级实机验收
+- 风险：创建页去掉离开拦截后，用户误离开时仍可能依赖本地草稿恢复能力
+- 风险：当前截图目录虽已切到 `v0.8.0`，但素材本身仍沿用上一轮拍摄批次
+- 风险：GitHub 仓库已接通，但本地与远端 `main` 不是同一提交谱系；真正发布前需要谨慎选择推送方式
 
 ## 验证结果
 
 - 已跑验证：
-  - `node --test lib/ui-simplification-source-regressions.test.mjs`
-  - `node --test lib/create-agent-source-regressions.test.mjs`
+  - `node lib/create-agent-source-regressions.test.mjs`
+  - `node lib/job-details-client-safety.test.mjs`
+  - `node lib/gemini-copy-bundle-fallback.test.mjs`
+  - `node lib/ui-simplification-source-regressions.test.mjs`
   - `npm run typecheck`
+  - `npm run build`
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -SkipBuild -SanitizeSecrets -CreateZip`
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\build-inno-installer.ps1 -SkipBuild -SanitizeSecrets`
 - 当前结果：
-  - 品牌库独立页、设置页收口和头部中区结构均已被源码回归覆盖
+  - 设置页结构、底部全局动作区和响应式规则都有源码级约束
+  - 创建页离开不拦截、详情页编号展示、`reference-remix` 缺省文案都已有源码回归保护
   - TypeScript 类型检查通过
-  - 尚未执行浏览器级烟测
+  - 已生成 `release/picture-creation-safe.zip`
+  - 已生成 `release/PICTURE-CREATION-WINDOWS-0.8.0.exe`
 
 ## 下一步
 
-- 下一步动作：
-  - 优先补浏览器级烟测，确认视觉落地
-  - 然后决定是继续做“对外交付文档同步”，还是切一轮“版本与提交范围整理”
-- 如果失败，回退点：
-  - 以当前根目录主文档和源码回归测试作为项目事实来源，继续参考 `README.md` 与 `Readme/` 的旧交付口径处理外部说明
+- 推荐下一步：
+  - 启动本地页面做一次浏览器级烟测
+  - 提交 `v0.8.0`、打 tag，并确认是否需要覆盖远端 `main`
+  - 视情况再补拍一轮新的展示截图

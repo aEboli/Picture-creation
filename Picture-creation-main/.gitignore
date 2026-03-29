@@ -3,6 +3,7 @@ node_modules
 data
 dist
 .runtime
+.learnings
 .codex
 .playwright-cli
 *.log
