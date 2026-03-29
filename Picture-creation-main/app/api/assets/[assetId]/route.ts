@@ -5,18 +5,11 @@ import { Readable } from "node:stream";
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
 
+import { inferDownloadName, makeContentDisposition, sanitizeDownloadFilename } from "@/lib/download-filenames";
 import { AssetServiceError, getAssetOrThrow } from "@/lib/server/assets/service";
 import { mimeToExtension } from "@/lib/utils";
 
 export const runtime = "nodejs";
-
-const MIME_EXTENSION_MAP: Record<string, string> = {
-  "image/png": ".png",
-  "image/jpeg": ".jpg",
-  "image/webp": ".webp",
-  "image/gif": ".gif",
-  "image/svg+xml": ".svg",
-};
 
 const RESIZABLE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/avif", "image/tiff"]);
 const MIN_IMAGE_DIMENSION = 64;
@@ -27,40 +20,6 @@ const MAX_IMAGE_QUALITY = 90;
 
 // Cap Sharp's in-process cache so large preview bursts do not keep too much memory resident.
 sharp.cache({ memory: 32, files: 0, items: 64 });
-
-function inferDownloadName(originalName: string, mimeType: string) {
-  const trimmed = originalName.trim() || "asset";
-  const currentExtension = path.extname(trimmed);
-  const preferredExtension = MIME_EXTENSION_MAP[mimeType] ?? "";
-
-  if (currentExtension && currentExtension !== ".generated") {
-    return trimmed;
-  }
-
-  const baseName = currentExtension ? path.basename(trimmed, currentExtension) : trimmed;
-  return `${baseName}${preferredExtension}`;
-}
-
-function toAsciiFilename(filename: string) {
-  const extension = path.extname(filename);
-  const baseName = path.basename(filename, extension);
-  const normalizedBase = baseName
-    .normalize("NFKD")
-    .replace(/[^\x20-\x7E]/g, "")
-    .replace(/[^A-Za-z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "asset";
-  const safeExtension = /^[.A-Za-z0-9_-]+$/.test(extension) ? extension : "";
-  return `${normalizedBase}${safeExtension}`;
-}
-
-function makeContentDisposition(filename: string) {
-  const asciiFilename = toAsciiFilename(filename);
-  const encodedFilename = encodeURIComponent(filename)
-    .replace(/['()]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
-    .replace(/\*/g, "%2A");
-
-  return `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`;
-}
 
 function clampInteger(value: string | null, minimum: number, maximum: number) {
   if (!value) {
@@ -118,7 +77,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ error: "Asset not found." }, { status: 404 });
   }
 
-  const filename = inferDownloadName(asset.originalName, asset.mimeType);
+  const requestedFilename = request.nextUrl.searchParams.get("filename");
+  const filename =
+    requestedFilename && requestedFilename.trim()
+      ? sanitizeDownloadFilename(requestedFilename)
+      : inferDownloadName(asset.originalName, asset.mimeType);
   const actualFilePath = resolveExistingAssetPath(asset.filePath, asset.mimeType);
   const shouldDownload = request.nextUrl.searchParams.get("download") === "1";
   const requestedWidth = clampInteger(request.nextUrl.searchParams.get("w"), MIN_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION);

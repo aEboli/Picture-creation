@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { DEFAULT_AGENT_SETTINGS_STORE, serializeAgentSettingsStore } from "@/lib/agent-settings";
 import { APP_NAME } from "@/lib/constants";
 import { getRecommendedFeishuFieldMappingJson } from "@/lib/feishu-field-mapping";
 import type { AppSettings } from "@/lib/types";
@@ -69,4 +70,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   feishuBitableTableId: "",
   feishuUploadParentType: "bitable_image",
   feishuFieldMappingJson: DEFAULT_FEISHU_FIELD_MAPPING,
+  agentSettingsJson: serializeAgentSettingsStore(DEFAULT_AGENT_SETTINGS_STORE),
 };

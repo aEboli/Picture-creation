@@ -1,12 +1,14 @@
 import "server-only";
 
 import {
+  analyzeProductImageFeatures,
   generateEditedImage,
+  generateFeaturePromptCopyBundle,
   generateModeWorkflowCopyBundle,
   generateSharedModeAnalysis,
   normalizeProviderError,
   optimizeUserImagePrompt,
-  translateCreativeInputs,
+  runVisualAudit,
   translateUserPromptInputs,
 } from "@/lib/gemini";
 import { splitCompositeSourceDescription } from "@/lib/creative-fields";
@@ -32,7 +34,7 @@ import { syncJobToFeishu } from "@/lib/feishu";
 import { meetsRequestedResolutionBucket } from "@/lib/image-size-policy";
 import { readAssetBuffer, writeFileAsset } from "@/lib/storage";
 import { buildPromptModeCopyBundle } from "@/lib/templates";
-import type { GeneratedCopyBundle, ProviderOverride } from "@/lib/types";
+import type { GeneratedCopyBundle, ProviderOverride, VisualAudit } from "@/lib/types";
 import { detectImageDimensions } from "@/lib/utils";
 
 import {
@@ -96,29 +98,7 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
   updateJobStatus(jobId, "processing");
   const rawCreativeFields = splitCompositeSourceDescription(job.sourceDescription);
 
-  const localizedInputs =
-    job.creationMode === "prompt" || job.creationMode === "reference-remix"
-      ? null
-      : await translateCreativeInputs({
-          apiKey,
-          textModel: settings.defaultTextModel,
-          apiBaseUrl,
-          apiVersion,
-          apiHeaders,
-          country: job.country,
-          language: job.language,
-          platform: job.platform,
-          category: job.category,
-          brandName: job.brandName,
-          sku: job.sku,
-          productName: job.productName,
-          sellingPoints: job.sellingPoints,
-          restrictions: job.restrictions,
-          sourceDescription: rawCreativeFields.sourceDescription,
-          materialInfo: rawCreativeFields.materialInfo,
-          sizeInfo: rawCreativeFields.sizeInfo,
-        }).catch(() => null);
-  updateJobLocalizedInputs(jobId, localizedInputs);
+  updateJobLocalizedInputs(jobId, null);
 
   const promptModePromptInputs =
     job.creationMode === "prompt"
@@ -154,23 +134,22 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
       : promptModePromptInputs;
 
   const effectiveInputs = {
-    productName: localizedInputs?.productName || job.productName,
-    sellingPoints: localizedInputs?.sellingPoints || job.sellingPoints,
-    restrictions: localizedInputs?.restrictions || job.restrictions,
-    sourceDescription: localizedInputs?.sourceDescription || rawCreativeFields.sourceDescription,
-    materialInfo: localizedInputs?.materialInfo || rawCreativeFields.materialInfo,
-    sizeInfo: localizedInputs?.sizeInfo || rawCreativeFields.sizeInfo,
+    productName: job.productName,
+    sellingPoints: job.sellingPoints,
+    restrictions: job.restrictions,
+    sourceDescription: rawCreativeFields.sourceDescription,
+    materialInfo: rawCreativeFields.materialInfo,
+    sizeInfo: rawCreativeFields.sizeInfo,
   };
   const brandProfile = job.brandName ? getBrandByName(job.brandName) : null;
-  const workflowMode =
-    job.creationMode === "standard" ||
-    job.creationMode === "suite" ||
-    job.creationMode === "amazon-a-plus" ||
-    job.creationMode === "reference-remix"
+  const structuredAgentMode =
+    job.creationMode === "standard" || job.creationMode === "suite" || job.creationMode === "amazon-a-plus"
       ? job.creationMode
       : null;
+  const workflowMode = job.creationMode === "reference-remix" ? job.creationMode : null;
   const primarySourceAsset = sourceAssets[0] ?? null;
   const primaryReferenceAsset = referenceAssets[0] ?? null;
+  const structuredFeatureAnalysisCache = new Map<string, Promise<Awaited<ReturnType<typeof analyzeProductImageFeatures>>>>();
 
   const workflowAnalysis =
     workflowMode && primarySourceAsset
@@ -219,6 +198,9 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
 
   for (const item of queuedItems) {
     let copy: GeneratedCopyBundle | null = null;
+    let visualAudit: VisualAudit | null = null;
+    let generationAttemptUsed = 0;
+    let autoRetriedFromAudit = false;
     try {
       updateJobItemProcessing(item.id);
       const sourceAsset = item.sourceAssetId ? getAssetById(item.sourceAssetId) : null;
@@ -272,26 +254,73 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
               buffer: await readAssetBuffer(asset),
             })),
       );
+      const requestImageCount = sourceImages.length + referenceImages.length;
+      const requestBytes = [...sourceImages, ...referenceImages].reduce((total, image) => total + image.buffer.length, 0);
       const matchedTemplate = null;
-      const currentWorkflowAnalysis =
-        job.creationMode === "standard" && sourceAsset
-          ? await generateSharedModeAnalysis({
+      const currentStructuredFeatureAnalysis =
+        structuredAgentMode && sourceImages.length > 0
+          ? await (async () => {
+              const cacheKey = generationSemantics === "joint" ? "joint" : sourceAsset?.id || item.sourceAssetId || item.id;
+              if (!structuredFeatureAnalysisCache.has(cacheKey)) {
+                structuredFeatureAnalysisCache.set(
+                  cacheKey,
+                  analyzeProductImageFeatures({
+                    apiKey,
+                    textModel: settings.defaultTextModel,
+                    apiBaseUrl,
+                    apiVersion,
+                    apiHeaders,
+                    sourceImages,
+                    country: job.country,
+                    language: job.language,
+                    platform: job.platform,
+                    category: job.category,
+                    productName: effectiveInputs.productName,
+                    brandName: job.brandName,
+                    sellingPoints: effectiveInputs.sellingPoints,
+                    materialInfo: effectiveInputs.materialInfo,
+                    sizeInfo: effectiveInputs.sizeInfo,
+                  }).catch(() => ({
+                    mainSubject: effectiveInputs.productName || item.imageType,
+                    categoryGuess: job.category || "general product",
+                    coreFeatures: effectiveInputs.sellingPoints
+                      ? effectiveInputs.sellingPoints.split(/[\n,，;；]/g).map((part: string) => part.trim()).filter(Boolean).slice(0, 4)
+                      : [effectiveInputs.productName || item.imageType],
+                    visualCharacteristics: effectiveInputs.materialInfo
+                      ? effectiveInputs.materialInfo.split(/[\n,，;；]/g).map((part: string) => part.trim()).filter(Boolean).slice(0, 4)
+                      : [effectiveInputs.productName || item.imageType],
+                    materialSignals: effectiveInputs.materialInfo
+                      ? effectiveInputs.materialInfo.split(/[\n,，;；]/g).map((part: string) => part.trim()).filter(Boolean).slice(0, 4)
+                      : [effectiveInputs.productName || item.imageType],
+                    mustPreserve: [
+                      effectiveInputs.productName || item.imageType,
+                      ...(
+                        effectiveInputs.materialInfo
+                          ? effectiveInputs.materialInfo.split(/[\n,，;；]/g).map((part: string) => part.trim()).filter(Boolean).slice(0, 3)
+                          : []
+                      ),
+                    ].filter(Boolean),
+                  })),
+                );
+              }
+
+              return await structuredFeatureAnalysisCache.get(cacheKey)!;
+            })()
+          : null;
+      const currentWorkflowAnalysis = workflowAnalysis;
+
+      copy =
+        structuredAgentMode && currentStructuredFeatureAnalysis
+          ? await generateFeaturePromptCopyBundle({
               apiKey,
               textModel: settings.defaultTextModel,
               apiBaseUrl,
               apiVersion,
               apiHeaders,
-              mode: "standard",
-              sourceImage: {
-                mimeType: sourceAsset.mimeType,
-                buffer: await readAssetBuffer(sourceAsset),
-              },
-              referenceImage: referenceAssets[0]
-                ? {
-                    mimeType: referenceAssets[0].mimeType,
-                    buffer: await readAssetBuffer(referenceAssets[0]),
-                  }
-                : null,
+              mode: structuredAgentMode,
+              sourceImages,
+              analysis: currentStructuredFeatureAnalysis,
+              imageType: item.imageType,
               country: job.country,
               language: job.language,
               platform: job.platform,
@@ -299,16 +328,14 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
               productName: effectiveInputs.productName,
               brandName: job.brandName,
               sellingPoints: effectiveInputs.sellingPoints,
-              restrictions: effectiveInputs.restrictions,
-              sourceDescription: effectiveInputs.sourceDescription,
               materialInfo: effectiveInputs.materialInfo,
               sizeInfo: effectiveInputs.sizeInfo,
-              imageType: item.imageType,
-            }).catch(() => null)
-          : workflowAnalysis;
-
-      copy =
-        workflowMode
+              ratio: item.ratio,
+              resolutionLabel: item.resolutionLabel,
+              groupIndex: item.variantIndex,
+              groupCount: job.variantsPerType,
+            })
+          : workflowMode
           ? await generateModeWorkflowCopyBundle({
               apiKey,
               textModel: settings.defaultTextModel,
@@ -384,7 +411,7 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
         wrapPromptModeText: job.creationMode === "prompt",
         variantsPerType: job.variantsPerType,
         customPromptText:
-          workflowMode
+          structuredAgentMode || workflowMode
             ? copy?.optimizedPrompt || ""
             : promptModePrompt ?? (job.creationMode === "prompt" ? selectedPromptInput : undefined),
         country: job.country,
@@ -413,9 +440,14 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
       const maxGenerationAttempts = shouldRetryForResolutionBucket(settings.defaultImageModel, item.resolutionLabel) ? 3 : 1;
       let generated: Awaited<ReturnType<typeof generateEditedImage>> | null = null;
       let actualDimensions: ReturnType<typeof detectImageDimensions> = null;
+      let effectivePromptText = imageInput.customPromptText;
 
-      for (let attempt = 1; attempt <= maxGenerationAttempts; attempt += 1) {
-        generated = await generateEditedImage(imageInput);
+      for (let generationAttempt = 1; generationAttempt <= Math.max(maxGenerationAttempts, 2); generationAttempt += 1) {
+        generationAttemptUsed = generationAttempt;
+        generated = await generateEditedImage({
+          ...imageInput,
+          customPromptText: effectivePromptText,
+        });
         actualDimensions = detectImageDimensions(generated.buffer, generated.mimeType);
 
         if (
@@ -426,10 +458,59 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
             actualHeight: actualDimensions?.height ?? null,
           })
         ) {
+          const shouldRunAudit = false;
+          if (shouldRunAudit && generated) {
+            visualAudit = await runVisualAudit({
+              apiKey,
+              textModel: settings.defaultTextModel,
+              apiBaseUrl,
+              apiVersion,
+              apiHeaders,
+              mode: structuredAgentMode!,
+              sourceImages,
+              generatedImage: {
+                mimeType: generated.mimeType,
+                buffer: generated.buffer,
+              },
+              marketingStrategy: job.marketingStrategy!,
+              imageStrategy: item.imageStrategy!,
+              promptText: generated.promptText || effectivePromptText || "",
+            }).catch(() => null);
+
+            if (visualAudit && !visualAudit.passes) {
+              if (generationAttempt < 2) {
+                autoRetriedFromAudit = true;
+                effectivePromptText = [
+                  effectivePromptText || generated.promptText || "",
+                  "Audit repair instructions:",
+                  ...visualAudit.repairHints,
+                ]
+                  .filter(Boolean)
+                  .join("\n");
+                continue;
+              }
+
+              const auditError = withProviderDebugContext(
+                new Error(`Visual audit failed: ${visualAudit.reason}`),
+                `Visual audit failed: ${visualAudit.reason}`,
+              );
+              auditError.providerDebug = {
+                retrievalMethod: generated.providerDebug?.retrievalMethod ?? "inline",
+                rawText: generated.providerDebug?.rawText ?? "",
+                failureStage: "visual-audit",
+                failureReason: visualAudit.reason,
+                requestImageCount,
+                requestBytes,
+              };
+              auditError.promptText = generated.promptText || effectivePromptText || "";
+              throw auditError;
+            }
+          }
+
           break;
         }
 
-        if (attempt === maxGenerationAttempts) {
+        if (generationAttempt === maxGenerationAttempts) {
           const undersizedError = withProviderDebugContext(
             generated,
             `Provider returned a lower-than-requested image size for ${item.resolutionLabel}.`,
@@ -478,6 +559,9 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
           actualWidth: generatedAsset.width ?? undefined,
           actualHeight: generatedAsset.height ?? undefined,
         },
+        visualAudit,
+        generationAttempt: generationAttemptUsed,
+        autoRetriedFromAudit,
       });
 
       let syncWarning: string | null = null;
@@ -517,6 +601,9 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
         promptText,
         copy?.negativePrompt?.trim() || null,
         providerDebug,
+        visualAudit,
+        generationAttemptUsed,
+        autoRetriedFromAudit,
       );
 
       try {

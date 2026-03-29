@@ -4,7 +4,9 @@ import sharp from "sharp";
 // @ts-ignore - Node test imports this file directly and needs the explicit extension.
 import { DEFAULT_INLINE_IMAGE_MAX_BYTES, getMaxImagesPerPromptForModel, isGemini3ImageModel } from "./image-model-limits.ts";
 // @ts-ignore - Node test imports this file directly and needs the explicit extension.
-import { buildPromptModePrompt, normalizeSizeInfoToDualUnits } from "./templates.ts";
+import { appendQualityEnhancements } from "./prompt-quality-enhancements.ts";
+// @ts-ignore - Node test imports this file directly and needs the explicit extension.
+import { buildPromptModePrompt, buildSizeSpecVisualCopyLines, getImageTypeGuide, normalizeSizeInfoToDualUnits } from "./templates.ts";
 // @ts-ignore - Node test imports this file directly and needs the explicit extension.
 import type {
   BrandRecord,
@@ -12,7 +14,10 @@ import type {
   GeneratedCopyBundle,
   ImageType,
   LocalizedCreativeInputs,
+  MarketingImageStrategy,
+  MarketingStrategy,
   ProviderDebugInfo,
+  VisualAudit,
   ReferenceLayoutAnalysis,
   ReferencePosterCopy,
   TemplateRecord,
@@ -54,6 +59,43 @@ const copySchema = {
     cta: { type: "string" },
     posterHeadline: { type: "string" },
     posterSubline: { type: "string" },
+  },
+} as const;
+
+interface ProductImageFeatureAnalysis {
+  mainSubject: string;
+  categoryGuess: string;
+  coreFeatures: string[];
+  visualCharacteristics: string[];
+  materialSignals: string[];
+  mustPreserve: string[];
+}
+
+const productImageFeatureAnalysisSchema = {
+  type: "object",
+  required: [
+    "mainSubject",
+    "categoryGuess",
+    "coreFeatures",
+    "visualCharacteristics",
+    "materialSignals",
+    "mustPreserve",
+  ],
+  properties: {
+    mainSubject: { type: "string" },
+    categoryGuess: { type: "string" },
+    coreFeatures: { type: "array", items: { type: "string" } },
+    visualCharacteristics: { type: "array", items: { type: "string" } },
+    materialSignals: { type: "array", items: { type: "string" } },
+    mustPreserve: { type: "array", items: { type: "string" } },
+  },
+} as const;
+
+const concisePromptSchema = {
+  type: "object",
+  required: ["prompt"],
+  properties: {
+    prompt: { type: "string" },
   },
 } as const;
 
@@ -1248,15 +1290,15 @@ export async function translateCreativeInputs(input: {
 
 function normalizeParsedCopyBundle(parsed: Partial<GeneratedCopyBundle>): GeneratedCopyBundle {
   return {
-    optimizedPrompt: parsed.optimizedPrompt as string,
-    title: parsed.title as string,
-    subtitle: parsed.subtitle as string,
+    optimizedPrompt: typeof parsed.optimizedPrompt === "string" ? parsed.optimizedPrompt : "",
+    title: typeof parsed.title === "string" ? parsed.title : "",
+    subtitle: typeof parsed.subtitle === "string" ? parsed.subtitle : "",
     highlights: parsed.highlights ?? [],
     detailAngles: parsed.detailAngles ?? [],
     painPoints: parsed.painPoints ?? [],
-    cta: parsed.cta as string,
-    posterHeadline: parsed.posterHeadline as string,
-    posterSubline: parsed.posterSubline as string,
+    cta: typeof parsed.cta === "string" ? parsed.cta : "",
+    posterHeadline: typeof parsed.posterHeadline === "string" ? parsed.posterHeadline : "",
+    posterSubline: typeof parsed.posterSubline === "string" ? parsed.posterSubline : "",
   };
 }
 
@@ -1338,6 +1380,17 @@ export function parseCopyBundleResponse(rawText: string | undefined, productName
   } catch {
     return buildCopyBundleFromPlainText(rawText, productName);
   }
+}
+
+export function parseModelJsonResponse<T extends Record<string, unknown> = Record<string, unknown>>(rawText: string | undefined): T {
+  const trimmed = (rawText ?? "").trim();
+  if (!trimmed) {
+    return {} as T;
+  }
+
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  const normalized = fencedMatch ? fencedMatch[1]!.trim() : trimmed;
+  return JSON.parse(normalized) as T;
 }
 
 export async function optimizeUserImagePrompt(input: {
@@ -1934,6 +1987,1546 @@ export function getImageGenerationTemperature(
   return creationMode === "reference-remix"
     ? REFERENCE_REMIX_IMAGE_GENERATION_TEMPERATURE
     : DEFAULT_IMAGE_GENERATION_TEMPERATURE;
+}
+
+const marketingStrategySchema = {
+  type: "object",
+  required: [
+    "summary",
+    "category_judgment",
+    "product_stage",
+    "target_audience",
+    "core_purchase_motivations",
+    "prioritized_selling_points",
+    "recommended_visual_direction",
+    "recommended_content_structure",
+    "avoid_directions",
+    "conversion_goal",
+    "must_preserve_structural_truths",
+    "text_overlay_policy",
+  ],
+  properties: {
+    summary: { type: "string" },
+    category_judgment: { type: "string" },
+    product_stage: { type: "string" },
+    target_audience: { type: "string" },
+    core_purchase_motivations: { type: "array", items: { type: "string" } },
+    prioritized_selling_points: { type: "array", items: { type: "string" } },
+    recommended_visual_direction: { type: "string" },
+    recommended_content_structure: { type: "array", items: { type: "string" } },
+    avoid_directions: { type: "array", items: { type: "string" } },
+    conversion_goal: { type: "string" },
+    must_preserve_structural_truths: { type: "array", items: { type: "string" } },
+    text_overlay_policy: { type: "string" },
+  },
+} as const;
+
+const marketingImageStrategiesSchema = {
+  type: "object",
+  required: ["items"],
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        required: [
+          "id",
+          "image_type",
+          "title",
+          "marketing_role",
+          "primary_selling_point",
+          "scene_type",
+          "composition_guidance",
+          "copy_space_guidance",
+          "mood_lighting",
+          "output_ratio",
+          "why_needed",
+        ],
+        properties: {
+          id: { type: "string" },
+          image_type: { type: "string" },
+          title: { type: "string" },
+          marketing_role: { type: "string" },
+          primary_selling_point: { type: "string" },
+          scene_type: { type: "string" },
+          composition_guidance: { type: "string" },
+          copy_space_guidance: { type: "string" },
+          mood_lighting: { type: "string" },
+          output_ratio: { type: "string" },
+          why_needed: { type: "string" },
+        },
+      },
+    },
+  },
+} as const;
+
+const visualAuditSchema = {
+  type: "object",
+  required: [
+    "passes",
+    "structure_pass",
+    "text_pass",
+    "secondary_subject_pass",
+    "slot_distinctness_pass",
+    "reason",
+    "repair_hints",
+  ],
+  properties: {
+    passes: { type: "boolean" },
+    structure_pass: { type: "boolean" },
+    text_pass: { type: "boolean" },
+    secondary_subject_pass: { type: "boolean" },
+    slot_distinctness_pass: { type: "boolean" },
+    reason: { type: "string" },
+    repair_hints: { type: "array", items: { type: "string" } },
+  },
+} as const;
+
+function normalizeVisualAudit(parsed: Record<string, unknown>): VisualAudit {
+  const structurePass = Boolean(parsed.structure_pass);
+  const textPass = Boolean(parsed.text_pass);
+  const secondarySubjectPass = Boolean(parsed.secondary_subject_pass);
+  const slotDistinctnessPass = Boolean(parsed.slot_distinctness_pass);
+  const explicitPass = Boolean(parsed.passes);
+  return {
+    passes: explicitPass && structurePass && textPass && secondarySubjectPass && slotDistinctnessPass,
+    structurePass,
+    textPass,
+    secondarySubjectPass,
+    slotDistinctnessPass,
+    reason: trimWorkflowString(parsed.reason) || "Visual audit failed.",
+    repairHints: trimWorkflowStringList(parsed.repair_hints, 8),
+  };
+}
+
+function normalizeMarketingStrategy(parsed: Record<string, unknown>): MarketingStrategy {
+  return {
+    summary: trimWorkflowString(parsed.summary) || "Conversion-oriented visual strategy.",
+    categoryJudgment: trimWorkflowString(parsed.category_judgment) || "General ecommerce product",
+    productStage: trimWorkflowString(parsed.product_stage) || "Conversion",
+    targetAudience: trimWorkflowString(parsed.target_audience) || "Intent-driven online shoppers",
+    corePurchaseMotivations: trimWorkflowStringList(parsed.core_purchase_motivations, 6),
+    prioritizedSellingPoints: trimWorkflowStringList(parsed.prioritized_selling_points, 8),
+    recommendedVisualDirection:
+      trimWorkflowString(parsed.recommended_visual_direction) || "Clear product-first commercial photography",
+    recommendedContentStructure: trimWorkflowStringList(parsed.recommended_content_structure, 8),
+    avoidDirections: trimWorkflowStringList(parsed.avoid_directions, 8),
+    conversionGoal: trimWorkflowString(parsed.conversion_goal) || "Drive confident purchase intent",
+    mustPreserveStructuralTruths: trimWorkflowStringList(parsed.must_preserve_structural_truths, 8),
+    textOverlayPolicy: trimWorkflowString(parsed.text_overlay_policy) || "",
+  };
+}
+
+type MarketingStrategyContext = {
+  mode: "standard" | "suite" | "amazon-a-plus";
+  category: string;
+  productName: string;
+  sellingPoints: string;
+  sourceDescription: string;
+  materialInfo?: string;
+  sizeInfo?: string;
+};
+
+type MarketingProfile = {
+  key: string;
+  categoryJudgment: string;
+  targetAudience: string;
+  corePurchaseMotivations: string[];
+  prioritizedSellingPoints: string[];
+  recommendedVisualDirection: string;
+  recommendedContentStructure: string[];
+  avoidDirections: string[];
+  conversionGoal: string;
+  mustPreserveStructuralTruths: string[];
+  textOverlayPolicy: string;
+};
+
+function inferMarketingProfile(input: Omit<MarketingStrategyContext, "mode">): MarketingProfile {
+  const haystack = [
+    input.category,
+    input.productName,
+    input.sellingPoints,
+    input.sourceDescription,
+    input.materialInfo,
+    input.sizeInfo,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (
+    /lure|swimbait|bait|treble|hook|fishing|angler|articulated|jointed|predator|freshwater|bass|pike/.test(haystack)
+  ) {
+    return {
+      key: "fishing-lure",
+      categoryJudgment: "Articulated fishing lure for freshwater predator fishing",
+      targetAudience: "Freshwater predator anglers judging realism, swimming action, and hook-up confidence",
+      corePurchaseMotivations: [
+        "Trigger strikes through lifelike shape and movement",
+        "Trust the hardware, hook-up readiness, and durability",
+        "Visualize believable in-water performance before purchase",
+      ],
+      prioritizedSellingPoints: [
+        "Realistic fish-body profile and finish",
+        "Segmented swimming action and articulated motion",
+        "Treble hook hardware confidence and fish-ready durability",
+      ],
+      recommendedVisualDirection:
+        "Conversion-first fishing creative with premium lure detail, believable action cues, and strong hardware trust proof",
+      recommendedContentStructure: [
+        "Hero conversion visual that sells realism immediately",
+        "Swimming-action proof that explains segmented movement",
+        "Hook and hardware trust proof with close detail",
+        "Real-use or predator-strike context that helps the buyer imagine success",
+      ],
+      avoidDirections: [
+        "Avoid abstract poster styling that hides lure mechanics or hook detail",
+        "Avoid impossible splash effects or fake underwater drama that breaks product credibility",
+        "Avoid cluttered infographic layouts that make the lure itself hard to read",
+      ],
+      conversionGoal: "Drive confidence that the lure looks realistic, moves believably, and is ready to fish.",
+      mustPreserveStructuralTruths: [
+        "Preserve the uploaded lure's actual body topology exactly.",
+        "Do not add articulation joints if the source lure is single-body, and do not remove them if the source lure is segmented.",
+        "Preserve diving lip shape and size.",
+        "Preserve hook count and placement exactly.",
+        "Preserve hardware layout, split rings, and overall lure proportions.",
+      ],
+      textOverlayPolicy:
+        "No visible text, no badges, no logos, no watermarks, no labels, and no callout bubbles in the image. Do not render any visible text, badge, logo, watermark, label, or callout bubble in the image.",
+    };
+  }
+
+  if (/beauty|serum|skincare|cosmetic|cream|makeup/.test(haystack)) {
+    return {
+      key: "beauty",
+      categoryJudgment: "Beauty / skincare ecommerce product",
+      targetAudience: "Beauty shoppers comparing visible benefits, trust, and premium feel",
+      corePurchaseMotivations: [
+        "See premium texture and packaging credibility",
+        "Understand the clearest visible benefit promise",
+        "Feel that the product belongs in an aspirational routine",
+      ],
+      prioritizedSellingPoints: [
+        "Core visible benefit",
+        "Premium packaging and formula credibility",
+        "Routine fit and lifestyle desirability",
+      ],
+      recommendedVisualDirection: "Premium clean beauty photography with texture trust and aspirational ritual cues",
+      recommendedContentStructure: [
+        "Hero benefit visual",
+        "Texture or formula proof",
+        "Routine or lifestyle fit scene",
+      ],
+      avoidDirections: [
+        "Avoid over-decorative props that hide the product",
+        "Avoid fake science clutter that lowers trust",
+      ],
+      conversionGoal: "Turn premium impression into immediate benefit understanding and trust.",
+      mustPreserveStructuralTruths: [
+        "Preserve package silhouette, cap shape, bottle or jar proportions, and label placement.",
+        "Do not invent extra accessories or change packaging architecture.",
+      ],
+      textOverlayPolicy:
+        "No visible text, no badges, no logos, no watermarks, no labels, and no callout bubbles in the image. Do not render any visible text, badge, logo, watermark, label, or callout bubble in the image.",
+    };
+  }
+
+  return {
+    key: "generic",
+    categoryJudgment: `${input.category || "General"} ecommerce product`,
+    targetAudience: "Intent-driven online shoppers",
+    corePurchaseMotivations: [
+      "Understand the product's clearest value quickly",
+      "Trust the product quality and practical fit",
+      "Feel confident about purchase relevance",
+    ],
+    prioritizedSellingPoints: [
+      "Primary product value proposition",
+      "One trust-building proof point",
+      "One practical usage or outcome proof",
+    ],
+    recommendedVisualDirection: "Clear product-first commercial photography",
+    recommendedContentStructure: [
+      "Hero conversion visual",
+      "Benefit proof visual",
+      "Trust or usage proof visual",
+    ],
+    avoidDirections: [
+      "Avoid cluttered compositions that reduce product readability",
+      "Avoid overly abstract styling that weakens conversion clarity",
+    ],
+    conversionGoal: "Drive confident purchase intent.",
+    mustPreserveStructuralTruths: [
+      "Preserve the uploaded product's body shape, core structure, material truth, and proportion exactly.",
+      "Do not invent new structural parts that are not present in the source image.",
+    ],
+    textOverlayPolicy:
+      "No visible text, no badges, no logos, no watermarks, no labels, and no callout bubbles in the image. Do not render any visible text, badge, logo, watermark, label, or callout bubble in the image.",
+  };
+}
+
+export function finalizeMarketingStrategy(
+  parsed: Record<string, unknown>,
+  context: MarketingStrategyContext,
+): MarketingStrategy {
+  const normalized = normalizeMarketingStrategy(parsed);
+  const profile = inferMarketingProfile(context);
+  const genericAudience = !normalized.targetAudience || /intent-driven online shoppers/i.test(normalized.targetAudience);
+  const genericCategory = !normalized.categoryJudgment || /general ecommerce product/i.test(normalized.categoryJudgment);
+  const genericDirection =
+    !normalized.recommendedVisualDirection || /clear product-first commercial photography/i.test(normalized.recommendedVisualDirection);
+
+  return {
+    summary:
+      normalized.summary ||
+      `${profile.categoryJudgment}. ${profile.recommendedVisualDirection}.`,
+    categoryJudgment: genericCategory ? profile.categoryJudgment : normalized.categoryJudgment,
+    productStage: normalized.productStage || "Conversion",
+    targetAudience: genericAudience ? profile.targetAudience : normalized.targetAudience,
+    corePurchaseMotivations: normalized.corePurchaseMotivations.length > 0 ? normalized.corePurchaseMotivations : profile.corePurchaseMotivations,
+    prioritizedSellingPoints: normalized.prioritizedSellingPoints.length > 0 ? normalized.prioritizedSellingPoints : profile.prioritizedSellingPoints,
+    recommendedVisualDirection: genericDirection ? profile.recommendedVisualDirection : normalized.recommendedVisualDirection,
+    recommendedContentStructure:
+      normalized.recommendedContentStructure.length > 0 ? normalized.recommendedContentStructure : profile.recommendedContentStructure,
+    avoidDirections: normalized.avoidDirections.length > 0 ? normalized.avoidDirections : profile.avoidDirections,
+    conversionGoal:
+      normalized.conversionGoal && !/drive confident purchase intent/i.test(normalized.conversionGoal)
+        ? normalized.conversionGoal
+        : profile.conversionGoal,
+    mustPreserveStructuralTruths:
+      trimWorkflowStringList(parsed.must_preserve_structural_truths, 8).length > 0
+        ? trimWorkflowStringList(parsed.must_preserve_structural_truths, 8)
+        : profile.mustPreserveStructuralTruths,
+    textOverlayPolicy:
+      trimWorkflowString(parsed.text_overlay_policy) || profile.textOverlayPolicy,
+  };
+}
+
+export function buildFallbackMarketingImageStrategies(
+  mode: "standard" | "suite" | "amazon-a-plus",
+  defaultRatio: string,
+  context: {
+    category: string;
+    productName: string;
+    sellingPoints: string;
+    sourceDescription: string;
+    sizeInfo?: string;
+  },
+): MarketingImageStrategy[] {
+  const profile = inferMarketingProfile({
+    category: context.category,
+    productName: context.productName,
+    sellingPoints: context.sellingPoints,
+    sourceDescription: context.sourceDescription,
+  });
+
+  if (profile.key === "fishing-lure" && mode === "amazon-a-plus") {
+    return filterSizeDrivenMarketingImageStrategies([
+      {
+        id: "hero-poster",
+        imageType: "hero-poster",
+        title: "Hero poster",
+        marketingRole: "Drive click-through with a premium lure hero visual",
+        primarySellingPoint: "Realistic fish-body finish and strike-triggering silhouette",
+        sceneType: "Premium hero lure poster",
+        compositionGuidance: "Single dominant lure hero with premium framing and strong visual hierarchy",
+        copySpaceGuidance: "Reserve headline-safe whitespace without hiding the lure body",
+        moodLighting: "High-clarity metallic scale light with premium contrast",
+        outputRatio: defaultRatio,
+        whyNeeded: "Sell realism and desirability at first glance.",
+      },
+      {
+        id: "action-motion-proof",
+        imageType: "action-motion-proof",
+        title: "Swimming action proof",
+        marketingRole: "Show why the lure creates believable swimming motion without changing its body topology",
+        primarySellingPoint: "Believable swim path, body roll, and strike-triggering motion",
+        sceneType: "Action demonstration scene",
+        compositionGuidance: "Show the lure with motion-oriented framing that emphasizes swim path and body roll while preserving a single continuous body silhouette",
+        copySpaceGuidance: "Use controlled side whitespace for one short action-led message",
+        moodLighting: "Dynamic natural light with clear body contour separation and surface-energy realism",
+        outputRatio: defaultRatio,
+        whyNeeded: "Translate mechanics into strike-triggering performance.",
+      },
+      {
+        id: "hook-hardware-proof",
+        imageType: "hook-hardware-proof",
+        title: "Hook and hardware proof",
+        marketingRole: "Build trust in hook-up readiness and hardware durability",
+        primarySellingPoint: "Treble hook and hardware confidence",
+        sceneType: "Macro technical detail",
+        compositionGuidance: "Tight detail framing that keeps hooks, joints, and hardware visibly trustworthy",
+        copySpaceGuidance: "Small annotation-safe corners only",
+        moodLighting: "Sharp detail-revealing technical light",
+        outputRatio: defaultRatio,
+        whyNeeded: "Reduce purchase hesitation around fish-ready reliability.",
+      },
+      {
+        id: "water-use-scenario",
+        imageType: "water-use-scenario",
+        title: "Water-use scenario",
+        marketingRole: "Help the buyer imagine real fishing success",
+        primarySellingPoint: "Believable predator-fishing use case",
+        sceneType: "Freshwater strike scenario",
+        compositionGuidance: "Place the lure in a realistic fishing context without losing product readability",
+        copySpaceGuidance: "Moderate edge whitespace for one proof-oriented callout",
+        moodLighting: "Natural outdoor light with believable water context",
+        outputRatio: defaultRatio,
+        whyNeeded: "Turn product detail into in-use confidence.",
+      },
+    ], context.sizeInfo);
+  }
+
+  if (mode === "standard") {
+    return filterSizeDrivenMarketingImageStrategies([
+      {
+        id: "hero-conversion",
+        imageType: "hero-conversion",
+        title: "Hero conversion visual",
+        marketingRole: "Primary click-through and conversion image",
+        primarySellingPoint: "Core product value",
+        sceneType: "Commercial hero scene",
+        compositionGuidance: "One dominant hero product with clear focal hierarchy",
+        copySpaceGuidance: "Leave disciplined whitespace for optional copy",
+        moodLighting: "Bright premium commercial light",
+        outputRatio: defaultRatio,
+        whyNeeded: "This image should sell the product at first glance.",
+      },
+    ], context.sizeInfo);
+  }
+
+  if (mode === "amazon-a-plus") {
+    return filterSizeDrivenMarketingImageStrategies([
+      {
+        id: "hero-poster",
+        imageType: "hero-poster",
+        title: "Hero poster",
+        marketingRole: "Establish the product promise and premium impression",
+        primarySellingPoint: "Primary value proposition",
+        sceneType: "Poster-style hero scene",
+        compositionGuidance: "Large hero product with strong visual hierarchy",
+        copySpaceGuidance: "Reserve large, structured copy-safe zones",
+        moodLighting: "High-clarity premium advertising light",
+        outputRatio: defaultRatio,
+        whyNeeded: "Anchor the full A+ story.",
+      },
+      {
+        id: "benefit-overview",
+        imageType: "benefit-overview",
+        title: "Benefit overview",
+        marketingRole: "Summarize the top reasons to buy",
+        primarySellingPoint: "Top benefit cluster",
+        sceneType: "Feature infographic-style product scene",
+        compositionGuidance: "Show product with benefit callout anchors",
+        copySpaceGuidance: "Keep modular areas for benefit headlines",
+        moodLighting: "Clean explanatory light",
+        outputRatio: defaultRatio,
+        whyNeeded: "Help the buyer understand value quickly.",
+      },
+      {
+        id: "scenario-proof",
+        imageType: "scenario-proof",
+        title: "Usage scenario",
+        marketingRole: "Show believable real-world use",
+        primarySellingPoint: "Practical outcome",
+        sceneType: "Lifestyle use case",
+        compositionGuidance: "Product in a credible use moment",
+        copySpaceGuidance: "Moderate edge whitespace for short proof copy",
+        moodLighting: "Natural lifestyle light",
+        outputRatio: defaultRatio,
+        whyNeeded: "Turn features into buyer imagination.",
+      },
+      {
+        id: "spec-proof",
+        imageType: "spec-proof",
+        title: "Specification proof",
+        marketingRole: "Reduce hesitation with concrete facts",
+        primarySellingPoint: "Specification trust point",
+        sceneType: "Measured detail / comparison layout",
+        compositionGuidance: "Structured spec-first composition",
+        copySpaceGuidance: "Strong grid-like copy zones",
+        moodLighting: "Clear technical product light",
+        outputRatio: defaultRatio,
+        whyNeeded: "Close rational objections.",
+      },
+    ], context.sizeInfo);
+  }
+
+  return filterSizeDrivenMarketingImageStrategies([
+    {
+      id: "hero-main",
+      imageType: "hero-main",
+      title: "Hero main image",
+      marketingRole: "Drive first-click desire",
+      primarySellingPoint: "Primary value proposition",
+      sceneType: "Hero product scene",
+      compositionGuidance: "Single dominant hero with premium framing",
+      copySpaceGuidance: "Reserved whitespace for optional headline",
+      moodLighting: "Bright premium light",
+      outputRatio: defaultRatio,
+      whyNeeded: "Anchor the set with the strongest conversion visual.",
+    },
+    {
+      id: "benefit-proof",
+      imageType: "benefit-proof",
+      title: "Benefit proof",
+      marketingRole: "Explain the strongest buying reason",
+      primarySellingPoint: "Lead benefit",
+      sceneType: "Benefit-led product scene",
+      compositionGuidance: "Show product plus one dominant benefit cue",
+      copySpaceGuidance: "Stable copy-safe region for benefit explanation",
+      moodLighting: "Clear commercial detail light",
+      outputRatio: defaultRatio,
+      whyNeeded: "Translate promise into visible proof.",
+    },
+    {
+      id: "detail-proof",
+      imageType: "detail-proof",
+      title: "Detail proof",
+      marketingRole: "Build trust with product detail and craft evidence",
+      primarySellingPoint: "Quality proof point",
+      sceneType: "Close detail composition",
+      compositionGuidance: "Macro or near-detail framing with controlled context",
+      copySpaceGuidance: "Small clean margin for annotations",
+      moodLighting: "Texture-revealing light",
+      outputRatio: defaultRatio,
+      whyNeeded: "Reduce buyer skepticism.",
+    },
+    {
+      id: "scenario-conversion",
+      imageType: "scenario-conversion",
+      title: "Scenario conversion",
+      marketingRole: "Help the buyer imagine ownership",
+      primarySellingPoint: "Usage outcome",
+      sceneType: "Lifestyle scene",
+      compositionGuidance: "Believable use case with product clearly visible",
+      copySpaceGuidance: "Light supporting whitespace only",
+      moodLighting: "Natural aspirational light",
+      outputRatio: defaultRatio,
+      whyNeeded: "Make the product feel relevant in real life.",
+    },
+  ], context.sizeInfo);
+}
+
+export function filterSizeDrivenMarketingImageStrategies(
+  strategies: MarketingImageStrategy[],
+  sizeInfo?: string,
+): MarketingImageStrategy[] {
+  if (sizeInfo?.trim()) {
+    return strategies;
+  }
+
+  return strategies.filter((strategy) => {
+    const combined = [
+      strategy.imageType,
+      strategy.title,
+      strategy.marketingRole,
+      strategy.primarySellingPoint,
+      strategy.sceneType,
+      strategy.whyNeeded,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    return !/size-spec|spec-proof|size|dimension|measurement|parameter|specification|规格|尺寸|参数/.test(combined);
+  });
+}
+
+function normalizeMarketingImageStrategies(
+  mode: "standard" | "suite" | "amazon-a-plus",
+  parsed: Record<string, unknown>,
+  defaultRatio: string,
+  context: {
+    category: string;
+    productName: string;
+    sellingPoints: string;
+    sourceDescription: string;
+    sizeInfo?: string;
+  },
+): MarketingImageStrategy[] {
+  const items = Array.isArray(parsed.items) ? parsed.items : [];
+  const normalized = items
+    .map((item, index) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const record = item as Record<string, unknown>;
+      const title = trimWorkflowString(record.title) || trimWorkflowString(record.image_type) || `Strategy ${index + 1}`;
+      return {
+        id: trimWorkflowString(record.id) || `strategy-${index + 1}`,
+        imageType: trimWorkflowString(record.image_type) || `strategy-${index + 1}`,
+        title,
+        marketingRole: trimWorkflowString(record.marketing_role) || title,
+        primarySellingPoint: trimWorkflowString(record.primary_selling_point) || "",
+        sceneType: trimWorkflowString(record.scene_type) || "",
+        compositionGuidance: trimWorkflowString(record.composition_guidance) || "",
+        copySpaceGuidance: trimWorkflowString(record.copy_space_guidance) || "",
+        moodLighting: trimWorkflowString(record.mood_lighting) || "",
+        outputRatio: trimWorkflowString(record.output_ratio) || defaultRatio,
+        whyNeeded: trimWorkflowString(record.why_needed) || "",
+      } satisfies MarketingImageStrategy;
+    })
+    .filter((item): item is MarketingImageStrategy => Boolean(item));
+
+  if (normalized.length > 0) {
+    return filterSizeDrivenMarketingImageStrategies(mode === "standard" ? [normalized[0]!] : normalized, context.sizeInfo);
+  }
+
+  return buildFallbackMarketingImageStrategies(mode, defaultRatio, context);
+}
+
+function buildFallbackProductImageFeatures(context: {
+  productName: string;
+  category: string;
+  sellingPoints: string;
+  materialInfo?: string;
+  sizeInfo?: string;
+}): ProductImageFeatureAnalysis {
+  const normalizedProductName = trimWorkflowString(context.productName) || "product";
+  const sellingPointSignals = trimWorkflowStringList(context.sellingPoints.split(/[\n,，;；]/g), 4);
+  const materialSignals = trimWorkflowStringList(
+    [context.materialInfo, context.sizeInfo].filter(Boolean).join(", ").split(/[\n,，;；]/g),
+    4,
+  );
+
+  return {
+    mainSubject: normalizedProductName,
+    categoryGuess: trimWorkflowString(context.category) || "general product",
+    coreFeatures: sellingPointSignals.length ? sellingPointSignals : [normalizedProductName],
+    visualCharacteristics: materialSignals.length ? materialSignals : [normalizedProductName],
+    materialSignals: materialSignals.length ? materialSignals : [normalizedProductName],
+    mustPreserve: [normalizedProductName, ...materialSignals].filter(Boolean).slice(0, 4),
+  };
+}
+
+function normalizeProductImageFeatures(
+  raw: Record<string, unknown>,
+  context: {
+    productName: string;
+    category: string;
+    sellingPoints: string;
+    materialInfo?: string;
+    sizeInfo?: string;
+  },
+): ProductImageFeatureAnalysis {
+  const fallback = buildFallbackProductImageFeatures(context);
+
+  return {
+    mainSubject: trimWorkflowString(raw.mainSubject) || fallback.mainSubject,
+    categoryGuess: trimWorkflowString(raw.categoryGuess) || fallback.categoryGuess,
+    coreFeatures: trimWorkflowStringList(raw.coreFeatures, 6).length
+      ? trimWorkflowStringList(raw.coreFeatures, 6)
+      : fallback.coreFeatures,
+    visualCharacteristics: trimWorkflowStringList(raw.visualCharacteristics, 6).length
+      ? trimWorkflowStringList(raw.visualCharacteristics, 6)
+      : fallback.visualCharacteristics,
+    materialSignals: trimWorkflowStringList(raw.materialSignals, 6).length
+      ? trimWorkflowStringList(raw.materialSignals, 6)
+      : fallback.materialSignals,
+    mustPreserve: trimWorkflowStringList(raw.mustPreserve, 6).length
+      ? trimWorkflowStringList(raw.mustPreserve, 6)
+      : fallback.mustPreserve,
+  };
+}
+
+interface FeaturePromptScenarioPlan {
+  family: string;
+  marketingIntent: string;
+  sceneDirection: string;
+  subjectFocus: string;
+  cameraLanguage: string;
+  differentiationRule: string;
+  copyEnabled: boolean;
+  copyRule: string;
+  antiPatternRule: string;
+}
+
+function detectFishingLureAnalysis(analysis: ProductImageFeatureAnalysis) {
+  const combined = [
+    analysis.mainSubject,
+    analysis.categoryGuess,
+    ...analysis.coreFeatures,
+    ...analysis.visualCharacteristics,
+    ...analysis.materialSignals,
+    ...analysis.mustPreserve,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  return /fishing|lure|swimbait|bait|hook|propeller|treble|route?ya|鱼饵|路亚|三本钩|多节/.test(combined);
+}
+
+export function buildFeaturePromptScenarioPlan(input: {
+  imageType: string;
+  analysis: ProductImageFeatureAnalysis;
+  groupIndex: number;
+  groupCount: number;
+  language: string;
+}): FeaturePromptScenarioPlan {
+  const isFishingLure = detectFishingLureAnalysis(input.analysis);
+  const isMultiGroup = input.groupCount > 1;
+  const isSecondOrLaterGroup = input.groupIndex > 1;
+  const copyRuleBase =
+    input.language.toLowerCase().startsWith("zh")
+      ? "Allow one short headline and up to two short benefit lines only. If visible copy is rendered, use Simplified Chinese."
+      : "Allow one short headline and up to two short benefit lines only.";
+  const noCopyRule = "Do not render visible text, badges, labels, watermarks, or infographic callouts.";
+  const differentiationRule = isMultiGroup
+    ? isSecondOrLaterGroup
+      ? "This group must feel materially different from earlier groups in scene family, camera language, and selling logic."
+      : "Establish a strong primary scenario family for the first group."
+    : "Use one strong scenario family only.";
+  const antiPatternRule =
+    "Do not produce a simple background replacement. Change the marketing scene, camera logic, and selling context meaningfully.";
+
+  if (input.imageType === "feature-overview") {
+    return {
+      family: "copy_layout_benefit",
+      marketingIntent: "Turn the strongest benefits into a copy-led ecommerce visual instead of a plain product shot.",
+      sceneDirection: isFishingLure
+        ? "Use a clean advertising composition that still shows the lure body clearly while reserving structured text zones."
+        : "Use a clear benefit-led layout with disciplined whitespace and a strong product hero.",
+      subjectFocus: isFishingLure
+        ? "Keep the full lure, segmented body, red tail, and hardware readable while supporting one headline-led message."
+        : "Keep the product identity clear while making room for concise benefit copy.",
+      cameraLanguage: "Advertising layout composition with stable hero framing, readable text-safe zones, and non-chaotic product placement.",
+      differentiationRule,
+      copyEnabled: true,
+      copyRule: copyRuleBase,
+      antiPatternRule,
+    };
+  }
+
+  if (input.imageType === "size-spec") {
+    return {
+      family: "size_spec_copy_layout",
+      marketingIntent: "Turn the provided size data into a clear shopping-friendly dimension copy image.",
+      sceneDirection: "Use a clean ecommerce explainer layout that places dimension arrows and labels outside the product silhouette whenever possible.",
+      subjectFocus: "Mark length on the longest edge, width on the shortest edge, and height as the secondary dimension. Keep the product fully readable, place dimension labels in surrounding whitespace or outside the silhouette, and move weight into a separate info block.",
+      cameraLanguage: "Measured product layout with technical clarity, strong surrounding whitespace, and dimension rails that stay outside the body.",
+      differentiationRule,
+      copyEnabled: true,
+      copyRule:
+        input.language.toLowerCase().startsWith("zh")
+          ? "Visible copy must use Simplified Chinese dimension labels and dual-unit values such as 长 2.54cm/1in, 宽 5.08cm/2in. Do not invent measurements."
+          : "Visible copy must use dimension labels and dual-unit values such as Length 2.54cm/1in, Width 5.08cm/2in. Do not invent measurements.",
+      antiPatternRule:
+        "Do not place dimension labels, arrows, or weight text directly over the product body. Keep measurement graphics in surrounding whitespace or detached info blocks outside the silhouette whenever possible.",
+    };
+  }
+
+  if (input.imageType === "poster") {
+    if (isFishingLure && isSecondOrLaterGroup) {
+      return {
+        family: "underwater_impact_poster",
+        marketingIntent: "Create a dramatic conversion poster that feels action-led rather than catalog-like.",
+        sceneDirection: "Place the lure in a dynamic underwater hero scene with energetic bubbles, directional light, and clear product dominance.",
+        subjectFocus: "Keep the segmented lure body, red tail, hooks, and head propeller fully recognizable as the hero.",
+        cameraLanguage: "Hero poster framing with motion energy, dramatic lighting, and one dominant focal subject.",
+        differentiationRule,
+        copyEnabled: true,
+        copyRule: copyRuleBase,
+        antiPatternRule,
+      };
+    }
+
+    return {
+      family: "outdoor_tactical_hero",
+      marketingIntent: "Build a professional outdoor-gear hero image with stronger brand and performance cues.",
+      sceneDirection: "Place the lure on wet basalt rock or a tactical fishing surface near dawn water, with droplets and premium atmosphere.",
+      subjectFocus: "Show the whole lure as a rugged pro-grade tool, not just a floating product cutout.",
+      cameraLanguage: "Low-angle or three-quarter hero framing with outdoor depth, controlled mood light, and premium ad staging.",
+      differentiationRule,
+      copyEnabled: true,
+      copyRule: copyRuleBase,
+      antiPatternRule,
+    };
+  }
+
+  if (input.imageType === "detail") {
+    if (isFishingLure && isSecondOrLaterGroup) {
+      return {
+        family: "craftsmanship_finish_proof",
+        marketingIntent: "Prove finish quality, body texture, and premium lure craftsmanship.",
+        sceneDirection: "Stay extremely close to the lure surface and tail finish while preserving at least one clear structural anchor.",
+        subjectFocus: "Emphasize scale coating, finish transitions, red tail treatment, and one readable hardware anchor.",
+        cameraLanguage: "Controlled macro detail shot with premium side light and a clean proof-oriented crop.",
+        differentiationRule,
+        copyEnabled: false,
+        copyRule: noCopyRule,
+        antiPatternRule,
+      };
+    }
+
+    return {
+      family: "engineering_macro_detail",
+      marketingIntent: "Prove the mechanical credibility of the lure rather than just showing a pretty close-up.",
+      sceneDirection: "Use an engineering-style macro that makes the joints, front propeller, hooks, and hardware feel trustworthy.",
+      subjectFocus: "Prioritize hinge connection, metal hardware, propeller structure, and one clear body anchor.",
+      cameraLanguage: "Macro proof shot with technical clarity, hard directional light, and deliberate structure-led framing.",
+      differentiationRule,
+      copyEnabled: false,
+      copyRule: noCopyRule,
+      antiPatternRule,
+    };
+  }
+
+  if (input.imageType === "scene" && isFishingLure) {
+    if (isSecondOrLaterGroup) {
+      return {
+        family: "outdoor_tactical_hero",
+        marketingIntent: "Show the lure as serious outdoor gear with stronger ownership fantasy and pro-fishing atmosphere.",
+        sceneDirection: "Use a tactical outdoor shoreline or basalt rock environment instead of another underwater pass.",
+        subjectFocus: "Keep the lure as the only readable hero while adding wet surface, droplets, and outdoor context.",
+        cameraLanguage: "Outdoor tactical hero framing with atmospheric depth and strong product-first staging.",
+        differentiationRule,
+        copyEnabled: false,
+        copyRule: noCopyRule,
+        antiPatternRule,
+      };
+    }
+
+    return {
+      family: "underwater_dynamic_action",
+      marketingIntent: "Demonstrate believable swim action and real in-water use value.",
+      sceneDirection: "Place the lure in clear underwater motion with bubbles, light rays, and natural aquatic environment.",
+      subjectFocus: "Keep the lure body and hooks readable while showing swimming energy rather than a static product float.",
+      cameraLanguage: "Underwater action framing with dynamic side-follow composition and clear lure dominance.",
+      differentiationRule,
+      copyEnabled: false,
+      copyRule: noCopyRule,
+      antiPatternRule,
+    };
+  }
+
+  return {
+    family: "commercial_environmental_product",
+    marketingIntent: "Create a new commercial product scene that feels more intentional than a simple background swap.",
+    sceneDirection: "Build a believable commercial environment aligned with the product's usage and buyer mindset.",
+    subjectFocus: "Keep the product identity and key parts readable while using the environment to add marketing context.",
+    cameraLanguage: "Commercial product framing with clear focal hierarchy and meaningful scene design.",
+    differentiationRule,
+    copyEnabled: false,
+    copyRule: noCopyRule,
+    antiPatternRule,
+  };
+}
+
+function buildFeaturePromptFallback(input: {
+  mode: "standard" | "suite" | "amazon-a-plus";
+  analysis: ProductImageFeatureAnalysis;
+  imageType: string;
+  productName: string;
+  brandName: string;
+  sellingPoints: string;
+  materialInfo?: string;
+  sizeInfo?: string;
+  ratio: string;
+  resolutionLabel: string;
+  language: string;
+  groupIndex: number;
+  groupCount: number;
+  category: string;
+}): string {
+  const guide = getImageTypeGuide(input.imageType as ImageType);
+  const scenarioPlan = buildFeaturePromptScenarioPlan({
+    imageType: input.imageType,
+    analysis: input.analysis,
+    groupIndex: input.groupIndex,
+    groupCount: input.groupCount,
+    language: input.language,
+  });
+  const sizeCopyLines = input.imageType === "size-spec"
+    ? buildSizeSpecVisualCopyLines({
+        sizeInfo: input.sizeInfo,
+        language: input.language,
+      })
+    : [];
+  const promptText = [
+    `Create one precise ecommerce product image for ${input.imageType}.`,
+    guide?.intent ? `Type goal: ${guide.intent}` : null,
+    "Treat the uploaded image as the source of truth.",
+    "Subject consistency with the uploaded image is mandatory.",
+    `Scenario family: ${scenarioPlan.family}.`,
+    `Marketing intent: ${scenarioPlan.marketingIntent}`,
+    `Scene direction: ${scenarioPlan.sceneDirection}`,
+    `Subject focus: ${scenarioPlan.subjectFocus}`,
+    `Camera language: ${scenarioPlan.cameraLanguage}`,
+    scenarioPlan.differentiationRule,
+    scenarioPlan.antiPatternRule,
+    scenarioPlan.copyEnabled ? scenarioPlan.copyRule : scenarioPlan.copyRule,
+    sizeCopyLines.length ? `Required visible size copy: ${sizeCopyLines.join(" | ")}.` : null,
+    `Subject: ${input.analysis.mainSubject || input.productName}.`,
+    `Keep true: ${input.analysis.mustPreserve.slice(0, 4).join(", ")}.`,
+    input.analysis.coreFeatures.length ? `Focus: ${input.analysis.coreFeatures.slice(0, 3).join(", ")}.` : null,
+    input.analysis.visualCharacteristics.length
+      ? `Visual cues: ${input.analysis.visualCharacteristics.slice(0, 3).join(", ")}.`
+      : null,
+    guide?.extraPrompt || null,
+    input.productName ? "Use the product name as a helper hint only when it agrees with the image." : null,
+    input.brandName ? `Brand: ${input.brandName}.` : null,
+    input.sellingPoints ? `Selling points: ${trimWorkflowString(input.sellingPoints)}.` : null,
+    input.materialInfo ? `Material: ${trimWorkflowString(input.materialInfo)}.` : null,
+    input.sizeInfo ? `Size specs: ${trimWorkflowString(input.sizeInfo)}.` : null,
+    input.groupCount > 1 ? `Variant group ${input.groupIndex} of ${input.groupCount}. Keep the same product truth but vary composition slightly.` : null,
+    `Ratio: ${input.ratio}. Fidelity target: ${input.resolutionLabel}.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return appendQualityEnhancements({
+    promptText,
+    context: {
+      mode: input.mode,
+      language: input.language,
+      category: input.category,
+      imageType: input.imageType,
+    },
+  });
+}
+
+export async function analyzeProductImageFeatures(input: {
+  apiKey: string;
+  textModel: string;
+  apiBaseUrl?: string;
+  apiVersion?: string;
+  apiHeaders?: string;
+  sourceImages: Array<{ mimeType: string; buffer: Buffer }>;
+  country: string;
+  language: string;
+  platform: string;
+  category: string;
+  productName: string;
+  brandName: string;
+  sellingPoints: string;
+  materialInfo?: string;
+  sizeInfo?: string;
+}): Promise<ProductImageFeatureAnalysis> {
+  const ai = createClient(input);
+  const contents = [
+    ...input.sourceImages.map((image) => ({
+      inlineData: {
+        mimeType: image.mimeType,
+        data: image.buffer.toString("base64"),
+      },
+    })),
+    {
+      text: [
+        "You are a calm and precise product image analysis expert.",
+        "Analyze the uploaded main product image and extract only the product's core subject and feature characteristics.",
+        "Stay objective and concise.",
+        "Return JSON only.",
+        "If a product name is provided, treat it as a helper hint and never let it override what is visible in the image.",
+        buildPromptFactLine([
+          ["Country", input.country],
+          ["Language", input.language],
+          ["Platform", input.platform],
+          ["Category", input.category],
+          ["Product name", input.productName],
+          ["Brand", input.brandName],
+        ]),
+        buildPromptFactLine([["Selling points", input.sellingPoints]]),
+        buildPromptFactLine([["Material information", input.materialInfo]]),
+        buildPromptFactLine([["Size information", input.sizeInfo]]),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+  ];
+
+  const response = await ai.models.generateContent({
+    model: input.textModel,
+    contents,
+    config: {
+      responseMimeType: "application/json",
+      responseJsonSchema: productImageFeatureAnalysisSchema,
+      temperature: 0.15,
+    },
+  });
+
+  return normalizeProductImageFeatures(parseModelJsonResponse(response.text), {
+    productName: input.productName,
+    category: input.category,
+    sellingPoints: input.sellingPoints,
+    materialInfo: input.materialInfo,
+    sizeInfo: input.sizeInfo,
+  });
+}
+
+export async function generateFeaturePromptCopyBundle(input: {
+  apiKey: string;
+  textModel: string;
+  apiBaseUrl?: string;
+  apiVersion?: string;
+  apiHeaders?: string;
+  mode: "standard" | "suite" | "amazon-a-plus";
+  sourceImages: Array<{ mimeType: string; buffer: Buffer }>;
+  analysis: ProductImageFeatureAnalysis;
+  imageType: string;
+  country: string;
+  language: string;
+  platform: string;
+  category: string;
+  productName: string;
+  brandName: string;
+  sellingPoints: string;
+  materialInfo?: string;
+  sizeInfo?: string;
+  ratio: string;
+  resolutionLabel: string;
+  groupIndex: number;
+  groupCount: number;
+}): Promise<GeneratedCopyBundle> {
+  const fallbackPrompt = buildFeaturePromptFallback(input);
+  const ai = createClient(input);
+  const guide = getImageTypeGuide(input.imageType as ImageType);
+  const scenarioPlan = buildFeaturePromptScenarioPlan({
+    imageType: input.imageType,
+    analysis: input.analysis,
+    groupIndex: input.groupIndex,
+    groupCount: input.groupCount,
+    language: input.language,
+  });
+  const sizeCopyLines = input.imageType === "size-spec"
+    ? buildSizeSpecVisualCopyLines({
+        sizeInfo: input.sizeInfo,
+        language: input.language,
+      })
+    : [];
+  const response = await ai.models.generateContent({
+    model: input.textModel,
+    contents: [
+      ...input.sourceImages.map((image) => ({
+        inlineData: {
+          mimeType: image.mimeType,
+          data: image.buffer.toString("base64"),
+        },
+      })),
+      [
+        "You are a concise ecommerce visual prompt expert.",
+        "Use the uploaded product image itself together with the analysis JSON.",
+        "Use the structured product facts only as supporting context.",
+        "Return JSON only.",
+        'Only output {"prompt":"..."} with no extra keys.',
+        "Only write the final prompt content. Do not output analysis, markdown, or extra explanation.",
+        "The final prompt must stay concise, precise, and commercially usable.",
+        "Subject consistency with the uploaded image is mandatory.",
+        "Keep the same main product identity, key structure, material feel, and distinctive parts from the uploaded image.",
+        "Use the product name only as a helper hint when it is provided.",
+        "Do not follow a fixed template or repeat one preset scene across every image.",
+        "Choose the most commercially useful scene according to the product's actual structure, usage logic, and buyer needs.",
+        "If the current group index is greater than 1, pick a meaningfully different selling angle instead of lightly rewriting the previous image.",
+        "Do not produce a simple background replacement.",
+        "The result must feel like a materially new marketing scene with a clear selling purpose.",
+        buildPromptFactLine([
+          ["Mode", input.mode],
+          ["Country", input.country],
+          ["Language", input.language],
+          ["Platform", input.platform],
+          ["Category", input.category],
+          ["Image type", input.imageType],
+          ["Product name", input.productName],
+          ["Brand", input.brandName],
+        ]),
+        buildPromptFactLine([["Selling points", input.sellingPoints]]),
+        buildPromptFactLine([["Material information", input.materialInfo]]),
+        buildPromptFactLine([["Size information", input.sizeInfo]]),
+        guide?.intent ? `Image-type intent: ${guide.intent}` : null,
+        guide?.extraPrompt ? `Image-type visual focus: ${guide.extraPrompt}` : null,
+        `Scenario planning hint (not a fixed template): ${scenarioPlan.family}.`,
+        `Suggested marketing intent: ${scenarioPlan.marketingIntent}`,
+        `Suggested scene direction: ${scenarioPlan.sceneDirection}`,
+        `Suggested subject focus: ${scenarioPlan.subjectFocus}`,
+        `Suggested camera language: ${scenarioPlan.cameraLanguage}`,
+        `Variation rule: ${scenarioPlan.differentiationRule}`,
+        `Anti-pattern rule: ${scenarioPlan.antiPatternRule}`,
+        scenarioPlan.copyEnabled
+          ? `Visible copy rule: ${scenarioPlan.copyRule}`
+          : `Visible copy rule: ${scenarioPlan.copyRule}`,
+        sizeCopyLines.length ? `Required visible size copy lines: ${sizeCopyLines.join(" | ")}` : null,
+        `Image analysis JSON:\n${JSON.stringify(input.analysis, null, 2)}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseJsonSchema: concisePromptSchema,
+      temperature: 0.2,
+    },
+  });
+
+  const parsed = parseModelJsonResponse<{ prompt?: string }>(response.text);
+  const optimizedPrompt = appendQualityEnhancements({
+    promptText: sanitizeWorkflowOptimizedPrompt(trimWorkflowString(parsed.prompt), fallbackPrompt),
+    context: {
+      mode: input.mode,
+      language: input.language,
+      category: input.category,
+      imageType: input.imageType,
+    },
+  });
+
+  return {
+    optimizedPrompt,
+    title: input.imageType,
+    subtitle: guide?.copyFocus || input.imageType,
+    highlights: input.analysis.coreFeatures.slice(0, 3),
+    detailAngles: input.analysis.visualCharacteristics.slice(0, 3),
+    painPoints: [],
+    cta: "",
+    posterHeadline: input.productName || input.imageType,
+    posterSubline: guide?.copyFocus || "",
+  };
+}
+
+export async function generateMarketingStrategy(input: {
+  apiKey: string;
+  textModel: string;
+  apiBaseUrl?: string;
+  apiVersion?: string;
+  apiHeaders?: string;
+  mode: "standard" | "suite" | "amazon-a-plus";
+  sourceImages: Array<{ mimeType: string; buffer: Buffer }>;
+  country: string;
+  language: string;
+  platform: string;
+  category: string;
+  productName: string;
+  brandName: string;
+  sellingPoints: string;
+  restrictions: string;
+  sourceDescription: string;
+  materialInfo?: string;
+  sizeInfo?: string;
+}): Promise<MarketingStrategy> {
+  const ai = createClient(input);
+  const modeGoal =
+    input.mode === "standard"
+      ? "Recommend the single strongest conversion direction for one hero image."
+      : input.mode === "suite"
+        ? "Recommend the best multi-image detail-page content structure. Do not assume a fixed 6-image template."
+        : "Recommend the best A+ / long-detail module structure. Do not assume a fixed 6-module template.";
+
+  const contents = [
+    ...input.sourceImages.map((image) => ({
+      inlineData: {
+        mimeType: image.mimeType,
+        data: image.buffer.toString("base64"),
+      },
+    })),
+    {
+      text: [
+        "You are a senior ecommerce visual marketing strategist.",
+        "Primary optimization goal: conversion.",
+        "Analyze the uploaded product image(s) together with the structured business inputs, then return one JSON marketing strategy.",
+        "Do not describe technical image defects unless they materially change the selling strategy.",
+        "This is not a prompt-writing task yet. Focus on audience, selling logic, and visual marketing direction.",
+        "Return JSON only.",
+        "Do not leave the arrays empty. Always return at least 3 core purchase motivations, 3 prioritized selling points, 3 recommended content structure items, and 2 avoid directions.",
+        "Category judgment must be more specific than a generic marketplace category when the product clues allow it.",
+        "Always return must_preserve_structural_truths and text_overlay_policy.",
+        modeGoal,
+        buildPromptFactLine([
+          ["Country", input.country],
+          ["Language", input.language],
+          ["Platform", input.platform],
+          ["Category", input.category],
+          ["Product name", input.productName],
+          ["Brand", input.brandName],
+        ]),
+        buildPromptFactLine([["Selling points", input.sellingPoints]]),
+        buildPromptFactLine([["Restrictions", input.restrictions]]),
+        buildPromptFactLine([["Additional notes", input.sourceDescription]]),
+        buildPromptFactLine([["Material information", input.materialInfo]]),
+        buildPromptFactLine([["Size and weight information", input.sizeInfo]]),
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    },
+  ];
+
+  const response = await ai.models.generateContent({
+    model: input.textModel,
+    contents,
+    config: {
+      responseMimeType: "application/json",
+      responseJsonSchema: marketingStrategySchema,
+      temperature: 0.25,
+    },
+  });
+
+  return finalizeMarketingStrategy(parseModelJsonResponse(response.text), {
+    mode: input.mode,
+    category: input.category,
+    productName: input.productName,
+    sellingPoints: input.sellingPoints,
+    sourceDescription: input.sourceDescription,
+    materialInfo: input.materialInfo,
+    sizeInfo: input.sizeInfo,
+  });
+}
+
+export async function generateMarketingImageStrategies(input: {
+  apiKey: string;
+  textModel: string;
+  apiBaseUrl?: string;
+  apiVersion?: string;
+  apiHeaders?: string;
+  mode: "standard" | "suite" | "amazon-a-plus";
+  marketingStrategy: MarketingStrategy;
+  category: string;
+  productName: string;
+  brandName: string;
+  sellingPoints: string;
+  restrictions: string;
+  sourceDescription: string;
+  materialInfo?: string;
+  sizeInfo?: string;
+  defaultRatio: string;
+}): Promise<MarketingImageStrategy[]> {
+  const ai = createClient(input);
+  const modeRule =
+    input.mode === "standard"
+      ? "Return exactly 1 image strategy."
+      : input.mode === "suite"
+        ? "Return 4 to 8 image strategies for a conversion-oriented detail-page set."
+        : "Return 4 to 8 image strategies for an Amazon A+ style detail module system.";
+
+  const response = await ai.models.generateContent({
+    model: input.textModel,
+    contents: [
+      [
+        "You are an ecommerce visual marketing planner.",
+        "Expand the approved marketing strategy into per-image execution strategies.",
+        "This is still not the final prompt-writing step.",
+        "Return JSON only.",
+        modeRule,
+        `Default output ratio to prefer unless a strategy clearly needs another ratio: ${input.defaultRatio}.`,
+        buildPromptFactLine([
+          ["Mode", input.mode],
+          ["Category", input.category],
+          ["Product name", input.productName],
+          ["Brand", input.brandName],
+        ]),
+        buildPromptFactLine([["Selling points", input.sellingPoints]]),
+        buildPromptFactLine([["Restrictions", input.restrictions]]),
+        buildPromptFactLine([["Additional notes", input.sourceDescription]]),
+        buildPromptFactLine([["Material information", input.materialInfo]]),
+        buildPromptFactLine([["Size and weight information", input.sizeInfo]]),
+        `Approved marketing strategy JSON:\n${JSON.stringify(input.marketingStrategy, null, 2)}`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseJsonSchema: marketingImageStrategiesSchema,
+      temperature: 0.28,
+    },
+  });
+
+  return normalizeMarketingImageStrategies(input.mode, parseModelJsonResponse(response.text), input.defaultRatio, {
+    category: input.category,
+    productName: input.productName,
+    sellingPoints: input.sellingPoints,
+    sourceDescription: input.sourceDescription,
+    sizeInfo: input.sizeInfo,
+  });
+}
+
+function buildMarketingStrategyFallbackPrompt(input: {
+  mode: "standard" | "suite" | "amazon-a-plus";
+  marketingStrategy: MarketingStrategy;
+  imageStrategy: MarketingImageStrategy;
+  productName: string;
+  language: string;
+  category: string;
+  brandName: string;
+  sellingPoints: string;
+  restrictions: string;
+  sourceDescription: string;
+  materialInfo?: string;
+  sizeInfo?: string;
+  ratio: string;
+  resolutionLabel: string;
+}) {
+  return buildMarketingExecutionPrompt(input);
+}
+
+export function buildMarketingExecutionPrompt(input: {
+  mode?: "standard" | "suite" | "amazon-a-plus";
+  marketingStrategy: MarketingStrategy;
+  imageStrategy: MarketingImageStrategy;
+  productName: string;
+  language?: string;
+  category?: string;
+  brandName: string;
+  sellingPoints: string;
+  restrictions: string;
+  sourceDescription: string;
+  materialInfo?: string;
+  sizeInfo?: string;
+  ratio: string;
+  resolutionLabel: string;
+}) {
+  const roleText = input.imageStrategy.marketingRole.toLowerCase();
+  const sceneText = input.imageStrategy.sceneType.toLowerCase();
+  const imageType = input.imageStrategy.imageType.toLowerCase();
+  const contextText = [
+    input.marketingStrategy.categoryJudgment,
+    input.productName,
+    input.sellingPoints,
+    input.sourceDescription,
+    input.materialInfo,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const isHeroSlot = /hero|click|poster/.test(roleText) || /hero|poster|main-image/.test(imageType);
+  const isDetailSlot = /hook|hardware|detail|macro|spec/.test(roleText) || /hook|hardware|detail|macro|material|craft|size|spec/.test(imageType) || /macro|technical/.test(sceneText);
+  const isFishingLure = /fishing|lure|swimbait|bait/.test(contextText);
+  const executionExtras = [
+    imageType === "hero-poster"
+      ? "Camera direction: low three-quarter hero angle with a single dominant lure silhouette against a premium clean backdrop."
+      : null,
+    imageType === "action-motion-proof"
+      ? "Camera direction: side-profile action angle that emphasizes a believable swim path, controlled body roll, and a realistic surface wake without changing the lure's body topology."
+      : null,
+    imageType === "hook-hardware-proof"
+      ? "Camera direction: ultra-close macro on the treble hook, split ring, and joint hardware with metal-detail sharpness."
+      : null,
+    imageType === "water-use-scenario"
+      ? "Camera direction: waterline perspective in a believable freshwater shoreline environment with predator-fishing context."
+      : null,
+    /hero|click|poster/.test(roleText)
+      ? "Shot style: premium hero shot with center-weighted framing, disciplined negative space, and premium advertising backdrop control."
+      : null,
+    /motion|swimming|action/.test(roleText) || /action/.test(sceneText)
+      ? "Shot style: dynamic angle with believable motion energy, action-forward composition cues, and single-body swim realism."
+      : null,
+    /hook|hardware|detail|macro|spec/.test(roleText) || /macro|technical/.test(sceneText)
+      ? "Shot style: macro close-up with sharp metal detail, hook hardware focus, and technical trust-building clarity."
+      : null,
+    /water|freshwater|predator|outdoor|use/.test(roleText) || /water|freshwater|outdoor/.test(sceneText)
+      ? "Shot style: believable freshwater outdoor use context with waterline realism and predator-fishing atmosphere."
+      : null,
+    isHeroSlot
+      ? "Environment rule: Do not fall back to a plain white catalog background."
+      : null,
+    isHeroSlot
+      ? "Environment rule: Do not render the product as an isolated object on empty white."
+      : null,
+    isHeroSlot
+      ? "Environment rule: Keep a premium advertising backdrop, controlled shadow, and strong hero focal staging."
+      : null,
+    isDetailSlot
+      ? "Composition rule: Do not settle for a generic close-up texture shot."
+      : null,
+    isDetailSlot
+      ? "Composition rule: Keep at least two structural proof anchors visible in the frame."
+      : null,
+    isDetailSlot && isFishingLure
+      ? "For fishing-lure proof shots, use a combination of diving lip, hook set, hardware connection, and body texture."
+      : null,
+    isDetailSlot && isFishingLure
+      ? "At least one visible anchor must clearly prove the lure body itself."
+      : null,
+  ].filter(Boolean);
+
+  const promptText = [
+    "Create one conversion-oriented ecommerce product image.",
+    `Overall marketing summary: ${input.marketingStrategy.summary}`,
+    `Conversion goal: ${input.marketingStrategy.conversionGoal}`,
+    `Audience: ${input.marketingStrategy.targetAudience}`,
+    `Visual direction: ${input.marketingStrategy.recommendedVisualDirection}`,
+    `Structural truth policy: ${input.marketingStrategy.mustPreserveStructuralTruths.join(" ")}`,
+    `Text overlay policy: ${input.marketingStrategy.textOverlayPolicy}`,
+    `Image role: ${input.imageStrategy.marketingRole}`,
+    `Primary selling point: ${input.imageStrategy.primarySellingPoint}`,
+    `Scene type: ${input.imageStrategy.sceneType}`,
+    `Composition guidance: ${input.imageStrategy.compositionGuidance}`,
+    `Copy-space guidance: ${input.imageStrategy.copySpaceGuidance}`,
+    `Mood and lighting: ${input.imageStrategy.moodLighting}`,
+    buildPromptFactLine([
+      ["Product name", input.productName],
+      ["Brand", input.brandName],
+    ]),
+    buildPromptFactLine([["Selling points", input.sellingPoints]]),
+    buildPromptFactLine([["Restrictions", input.restrictions]]),
+    buildPromptFactLine([["Additional notes", input.sourceDescription]]),
+    buildPromptFactLine([["Material information", input.materialInfo]]),
+    buildPromptFactLine([["Size and weight information", input.sizeInfo]]),
+    "Structural truth is mandatory.",
+    ...input.marketingStrategy.mustPreserveStructuralTruths,
+    input.marketingStrategy.textOverlayPolicy,
+    ...executionExtras,
+    `Target ratio: ${input.imageStrategy.outputRatio || input.ratio}. Aim for ${input.resolutionLabel} level fidelity.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return appendQualityEnhancements({
+    promptText,
+    context: {
+      mode: input.mode ?? "standard",
+      language: input.language ?? "en-US",
+      category: input.category ?? "general",
+      imageType: input.imageStrategy.imageType,
+    },
+  });
+}
+
+export async function generateMarketingStrategyCopyBundle(input: {
+  apiKey: string;
+  textModel: string;
+  apiBaseUrl?: string;
+  apiVersion?: string;
+  apiHeaders?: string;
+  mode: "standard" | "suite" | "amazon-a-plus";
+  marketingStrategy: MarketingStrategy;
+  imageStrategy: MarketingImageStrategy;
+  country: string;
+  language: string;
+  platform: string;
+  category: string;
+  productName: string;
+  brandName: string;
+  sellingPoints: string;
+  restrictions: string;
+  sourceDescription: string;
+  materialInfo?: string;
+  sizeInfo?: string;
+  ratio: string;
+  resolutionLabel: string;
+}): Promise<GeneratedCopyBundle> {
+  const ai = createClient(input);
+  const fallbackPrompt = buildMarketingStrategyFallbackPrompt(input);
+  const response = await ai.models.generateContent({
+    model: input.textModel,
+    contents: [
+      [
+        "You are converting a visual marketing plan into one plain-text image generation prompt.",
+        "Return JSON only using the standard copy bundle structure.",
+        "Do not return markdown.",
+        "The final prompt must be ordinary image-generation text, not strategy JSON.",
+        buildPromptFactLine([
+          ["Mode", input.mode],
+          ["Country", input.country],
+          ["Language", input.language],
+          ["Platform", input.platform],
+          ["Category", input.category],
+          ["Product name", input.productName],
+          ["Brand", input.brandName],
+        ]),
+        `Overall marketing strategy JSON:\n${JSON.stringify(input.marketingStrategy, null, 2)}`,
+        `Current image strategy JSON:\n${JSON.stringify(input.imageStrategy, null, 2)}`,
+        `Target ratio: ${input.ratio}. Resolution bucket: ${input.resolutionLabel}.`,
+      ].join("\n"),
+    ],
+    config: {
+      responseMimeType: "application/json",
+      responseJsonSchema: copySchema,
+      temperature: 0.3,
+    },
+  });
+
+  const parsed = parseCopyBundleResponse(response.text, input.imageStrategy.title || input.productName);
+  if (!parsed.optimizedPrompt.trim()) {
+    return {
+      ...parsed,
+      optimizedPrompt: fallbackPrompt,
+      title: input.imageStrategy.title || input.productName,
+      subtitle: input.imageStrategy.marketingRole,
+      posterHeadline: input.imageStrategy.title || input.productName,
+      posterSubline: input.imageStrategy.primarySellingPoint || "",
+    };
+  }
+
+  return {
+    ...parsed,
+    optimizedPrompt: appendQualityEnhancements({
+      promptText: parsed.optimizedPrompt,
+      context: {
+        mode: input.mode,
+        language: input.language,
+        category: input.category,
+        imageType: input.imageStrategy.imageType,
+      },
+    }),
+    title: parsed.title || input.imageStrategy.title || input.productName,
+    subtitle: parsed.subtitle || input.imageStrategy.marketingRole || "",
+    posterHeadline: parsed.posterHeadline || parsed.title || input.imageStrategy.title || input.productName,
+    posterSubline: parsed.posterSubline || input.imageStrategy.primarySellingPoint || "",
+  };
+}
+
+export async function runVisualAudit(input: {
+  apiKey: string;
+  textModel: string;
+  apiBaseUrl?: string;
+  apiVersion?: string;
+  apiHeaders?: string;
+  mode: "standard" | "suite" | "amazon-a-plus";
+  sourceImages: Array<{ mimeType: string; buffer: Buffer }>;
+  generatedImage: { mimeType: string; buffer: Buffer };
+  marketingStrategy: MarketingStrategy;
+  imageStrategy: MarketingImageStrategy;
+  promptText: string;
+}): Promise<VisualAudit> {
+  const ai = createClient(input);
+  const contents = [
+    ...input.sourceImages.slice(0, 2).map((image) => ({
+      inlineData: {
+        mimeType: image.mimeType,
+        data: image.buffer.toString("base64"),
+      },
+    })),
+    {
+      text: "The image(s) above are the source product truth reference.",
+    },
+    {
+      inlineData: {
+        mimeType: input.generatedImage.mimeType,
+        data: input.generatedImage.buffer.toString("base64"),
+      },
+    },
+    {
+      text: [
+        "The final image above is the generated candidate that must now be audited.",
+        "You are a strict ecommerce visual quality auditor.",
+        "Return JSON only.",
+        "Fail structure_pass if the generated candidate changes product body topology, segment count, lip shape, hook count or placement, hardware layout, proportions, or key pattern truth from the source.",
+        "Fail text_pass if any readable text, logo, watermark, badge, label, UI chip, icon bubble, or callout bubble appears when the text overlay policy forbids it.",
+        "Fail secondary_subject_pass if a second identifiable animal, person, hand, fish, boat, or other competing subject appears. Background-only indistinct context can pass only if it does not compete with the lure.",
+        "Fail slot_distinctness_pass if the image does not visually read like the intended slot or if it collapses into another slot's visual language.",
+        "repair_hints must be short, imperative prompt edits for one retry only.",
+        buildPromptFactLine([
+          ["Mode", input.mode],
+          ["Slot", input.imageStrategy.imageType],
+          ["Slot title", input.imageStrategy.title],
+        ]),
+        `Marketing strategy JSON:\n${JSON.stringify(input.marketingStrategy, null, 2)}`,
+        `Image strategy JSON:\n${JSON.stringify(input.imageStrategy, null, 2)}`,
+        `Prompt used:\n${input.promptText}`,
+      ].join("\n"),
+    },
+  ];
+
+  const response = await ai.models.generateContent({
+    model: input.textModel,
+    contents,
+    config: {
+      responseMimeType: "application/json",
+      responseJsonSchema: visualAuditSchema,
+      temperature: 0.1,
+    },
+  });
+
+  return normalizeVisualAudit(parseModelJsonResponse(response.text));
 }
 
 interface SharedWorkflowAnalysis {

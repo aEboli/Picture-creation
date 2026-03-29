@@ -64,38 +64,28 @@ test("standard mode source uses staged JSON workflow and removes legacy standard
   assert.doesNotMatch(templatesContent, /buildStandardAnalysisLayer/);
 });
 
-test("suite mode source enforces a single source image and uses the two-stage JSON workflow", () => {
+test("suite mode source enforces a single source image and now uses the two-agent prompt workflow", () => {
   const payloadContent = read(sourcePath("lib", "server", "generation", "payload.ts"));
   const geminiContent = read(sourcePath("lib", "gemini.ts"));
+  const createJobContent = read(sourcePath("lib", "server", "generation", "create-job.ts"));
 
   assert.match(payloadContent, /Suite mode only supports 1 source image\./);
-  assert.match(payloadContent, /selectedTypes:\s*\["main-image",\s*"lifestyle",\s*"feature-overview",\s*"scene",\s*"material-craft",\s*"size-spec"\]/);
-  assert.match(geminiContent, /suite stage 1 set analysis json/);
-  assert.match(geminiContent, /mode must be set\./);
-  assert.match(geminiContent, /Top-level JSON keys must be exactly: mode, subject_analysis, set_plan\./);
-  assert.match(geminiContent, /suite per-image planning json/);
-  assert.match(geminiContent, /suite per-image prompt conversion json/);
-  assert.doesNotMatch(geminiContent, /suiteTypeRules/);
-  assert.doesNotMatch(geminiContent, /suite shared product analysis json/);
-  assert.doesNotMatch(geminiContent, /suite type-specific prompt conversion/);
-  assert.match(geminiContent, /Suite workflow fallback:/);
+  assert.doesNotMatch(payloadContent, /selectedTypes:\s*payload\.imageStrategies\?\.length/);
+  assert.doesNotMatch(createJobContent, /generateMarketingWorkbenchPreview/);
+  assert.match(geminiContent, /export async function analyzeProductImageFeatures/);
+  assert.match(geminiContent, /export async function generateFeaturePromptCopyBundle/);
 });
 
-test("amazon a plus source enforces a single source image and uses the dedicated two-stage workflow", () => {
+test("amazon a plus source enforces a single source image and now uses the two-agent prompt workflow", () => {
   const payloadContent = read(sourcePath("lib", "server", "generation", "payload.ts"));
   const geminiContent = read(sourcePath("lib", "gemini.ts"));
+  const createJobContent = read(sourcePath("lib", "server", "generation", "create-job.ts"));
 
   assert.match(payloadContent, /Amazon A\+ mode only supports 1 source image\./);
-  assert.match(payloadContent, /selectedTypes:\s*\["poster",\s*"feature-overview",\s*"multi-scene",\s*"detail",\s*"size-spec",\s*"culture-value"\]/);
-  assert.match(geminiContent, /amazon stage 1 analysis json/);
-  assert.match(geminiContent, /mode must be amazon\./);
-  assert.match(geminiContent, /Top-level JSON keys must be exactly: mode, product_analysis, amazon_plan\./);
-  assert.match(geminiContent, /amazon per-module planning json/);
-  assert.match(geminiContent, /amazon per-module prompt conversion json/);
-  assert.doesNotMatch(geminiContent, /amazonAPlusTypeRules/);
-  assert.doesNotMatch(geminiContent, /amazon a\+ shared product analysis json/);
-  assert.doesNotMatch(geminiContent, /amazon a\+ type-specific prompt conversion/);
-  assert.match(geminiContent, /Amazon A\+ workflow fallback:/);
+  assert.doesNotMatch(payloadContent, /selectedTypes:\s*payload\.imageStrategies\?\.length/);
+  assert.doesNotMatch(createJobContent, /generateMarketingWorkbenchPreview/);
+  assert.match(geminiContent, /export async function analyzeProductImageFeatures/);
+  assert.match(geminiContent, /export async function generateFeaturePromptCopyBundle/);
 });
 
 test("reference remix source enforces 1+1 inputs and routes through the Chinese JSON workflow", () => {

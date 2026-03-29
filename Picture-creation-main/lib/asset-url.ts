@@ -2,6 +2,7 @@ export type AssetUrlOptions = {
   width?: number;
   quality?: number;
   download?: boolean;
+  filename?: string;
 };
 
 export function buildAssetUrl(assetId: string, options: AssetUrlOptions = {}) {
@@ -9,6 +10,9 @@ export function buildAssetUrl(assetId: string, options: AssetUrlOptions = {}) {
 
   if (options.download) {
     params.set("download", "1");
+  }
+  if (options.filename?.trim()) {
+    params.set("filename", options.filename.trim());
   }
   if (typeof options.width === "number" && Number.isFinite(options.width) && options.width > 0) {
     params.set("w", String(Math.round(options.width)));

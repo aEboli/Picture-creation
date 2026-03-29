@@ -1,6 +1,7 @@
 export type UiLanguage = "zh" | "en";
+export type AgentId = "image-analyst" | "prompt-engineer";
 
-export type JobStatus = "queued" | "processing" | "completed" | "failed" | "partial";
+export type JobStatus = "queued" | "processing" | "awaiting_strategy" | "completed" | "failed" | "partial";
 
 export type JobItemStatus = "queued" | "processing" | "completed" | "failed";
 
@@ -8,6 +9,7 @@ export type JobItemReviewStatus = "unreviewed" | "shortlisted" | "approved" | "r
 
 export type CreationMode = "standard" | "reference-remix" | "prompt" | "suite" | "amazon-a-plus";
 export type GenerationSemantics = "joint" | "batch";
+export type StrategyWorkflowMode = "quick" | "workbench";
 export type ReferenceStrength = "reference" | "balanced" | "product";
 export type ReferenceCopyMode = "reference" | "copy-sheet";
 export type ReferenceBackgroundMode = "preserve" | "simplify" | "regenerate";
@@ -15,7 +17,7 @@ export type ReferenceRemakeGoal = "hard-remake" | "soft-remake" | "structure-rem
 export type ReferenceCompositionLock = "strict" | "balanced" | "flexible";
 export type ReferenceTextRegionPolicy = "preserve" | "leave-space" | "remove";
 
-export type ImageType =
+export type KnownImageType =
   | "scene"
   | "main-image"
   | "lifestyle"
@@ -29,6 +31,8 @@ export type ImageType =
   | "size-spec"
   | "multi-scene"
   | "culture-value";
+
+export type ImageType = KnownImageType | (string & {});
 
 export interface SelectOption {
   value: string;
@@ -53,7 +57,17 @@ export interface AppSettings {
   feishuBitableTableId: string;
   feishuUploadParentType: string;
   feishuFieldMappingJson: string;
+  agentSettingsJson: string;
 }
+
+export interface AgentProfileSettings {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  openingPrompt: string;
+}
+
+export type AgentSettingsStore = Record<AgentId, AgentProfileSettings>;
 
 export interface FeishuFieldMapping {
   title?: string;
@@ -96,6 +110,50 @@ export interface LocalizedCreativeInputs {
   sourceDescription: string;
   materialInfo?: string;
   sizeInfo?: string;
+}
+
+export interface MarketingStrategy {
+  summary: string;
+  categoryJudgment: string;
+  productStage: string;
+  targetAudience: string;
+  corePurchaseMotivations: string[];
+  prioritizedSellingPoints: string[];
+  recommendedVisualDirection: string;
+  recommendedContentStructure: string[];
+  avoidDirections: string[];
+  conversionGoal: string;
+  mustPreserveStructuralTruths: string[];
+  textOverlayPolicy: string;
+}
+
+export interface MarketingImageStrategy {
+  id: string;
+  imageType: string;
+  title: string;
+  marketingRole: string;
+  primarySellingPoint: string;
+  sceneType: string;
+  compositionGuidance: string;
+  copySpaceGuidance: string;
+  moodLighting: string;
+  outputRatio: string;
+  whyNeeded: string;
+  mustNotOverlapWith?: string[];
+  forbiddenVisualLanguage?: string[];
+  minimumDistanceFromOtherSlots?: string;
+  secondarySubjectPolicy?: "none" | "background-only" | "allowed";
+  strategyEdited?: boolean;
+}
+
+export interface VisualAudit {
+  passes: boolean;
+  structurePass: boolean;
+  textPass: boolean;
+  secondarySubjectPass: boolean;
+  slotDistinctnessPass: boolean;
+  reason: string;
+  repairHints: string[];
 }
 
 export interface ReferenceTextZone {
@@ -144,7 +202,7 @@ export interface ProviderDebugInfo {
   retrievalMethod?: "inline" | "url";
   imageUrl?: string;
   rawText?: string;
-  failureStage?: "provider-request" | "response" | "provider-image-download";
+  failureStage?: "provider-request" | "response" | "provider-image-download" | "visual-audit";
   failureReason?: string;
   attempt?: number;
   maxAttempts?: number;
@@ -171,6 +229,7 @@ export interface CreateJobInput {
   id: string;
   creationMode: JobRecord["creationMode"];
   generationSemantics: GenerationSemantics;
+  strategyWorkflowMode: StrategyWorkflowMode;
   referenceRemakeGoal: JobRecord["referenceRemakeGoal"];
   referenceStrength: JobRecord["referenceStrength"];
   referenceCompositionLock: JobRecord["referenceCompositionLock"];
@@ -203,6 +262,7 @@ export interface CreateJobInput {
   sourceDescription: string;
   uiLanguage: UiLanguage;
   selectedTemplateOverrides: Record<string, string>;
+  marketingStrategy: MarketingStrategy | null;
   referenceLayoutOverride: ReferenceLayoutAnalysis | null;
   referencePosterCopyOverride: ReferencePosterCopy | null;
   sourceAssets: AssetRecord[];
@@ -215,6 +275,7 @@ export interface JobRecord {
   status: JobStatus;
   creationMode: CreationMode;
   generationSemantics: GenerationSemantics;
+  strategyWorkflowMode: StrategyWorkflowMode;
   referenceRemakeGoal: ReferenceRemakeGoal;
   referenceStrength: ReferenceStrength;
   referenceCompositionLock: ReferenceCompositionLock;
@@ -254,6 +315,7 @@ export interface JobRecord {
   sourceDescription: string;
   uiLanguage: UiLanguage;
   selectedTemplateOverrides: Record<string, string>;
+  marketingStrategy: MarketingStrategy | null;
   localizedInputs: LocalizedCreativeInputs | null;
   referenceLayoutOverride: ReferenceLayoutAnalysis | null;
   referencePosterCopyOverride: ReferencePosterCopy | null;
@@ -277,6 +339,11 @@ export interface JobItemRecord {
   height: number;
   variantIndex: number;
   promptInputIndex: number;
+  imageStrategy: MarketingImageStrategy | null;
+  strategyEdited: boolean;
+  visualAudit: VisualAudit | null;
+  generationAttempt: number;
+  autoRetriedFromAudit: boolean;
   status: JobItemStatus;
   promptText: string | null;
   negativePrompt: string | null;

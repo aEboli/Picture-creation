@@ -1329,10 +1329,14 @@ label span {
   margin: 0;
   color: color-mix(in srgb, var(--ui-text-soft, rgba(228, 232, 241, 0.72)) 86%, #ffffff);
   font-size: 0.78rem;
-  line-height: 1.2;
-  white-space: nowrap;
+  line-height: 1.35;
+  white-space: normal;
   overflow: hidden;
-  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  text-overflow: initial;
 }
 
 .create-submit-primary {
@@ -3396,4 +3400,3 @@ tbody tr:hover {
 .header-actions {
   justify-content: flex-end;
 }
-

@@ -12,10 +12,15 @@ import {
   normalizeSelectedResolutions,
   OUTPUT_LANGUAGES,
   PLATFORMS,
-  PRODUCT_CATEGORIES,
   RESOLUTIONS,
 } from "@/lib/constants";
 import { formatImageCounter } from "@/lib/create-form-copy";
+import {
+  createCreateDraftId,
+  CREATE_JOB_DRAFT_KEY,
+  readCreateDraftIdFromDraftJson,
+} from "@/lib/create-agent-history";
+import { resolveMappedPromptInputs } from "@/lib/create-agent-prompt-mapping";
 import {
   getMaxReferenceImagesForSelection,
   getMaxSourceImagesForSelection,
@@ -25,7 +30,11 @@ import {
 } from "@/lib/generation-semantics";
 import { getMaxImagesPerPromptForModel } from "@/lib/image-model-limits";
 import { getRecommendedCreateDefaults } from "@/lib/recommendations";
-import type { BrandRecord, GenerationSemantics, UiLanguage } from "@/lib/types";
+import type {
+  BrandRecord,
+  GenerationSemantics,
+  UiLanguage,
+} from "@/lib/types";
 import { dimensionsForVariant } from "@/lib/utils";
 
 type SubmitBlockReason =
@@ -36,14 +45,26 @@ type SubmitBlockReason =
   | "variants"
   | "product-name"
   | "suite-source-limit"
-  | "suite-selling-points"
-  | "suite-material"
-  | "suite-size"
   | "amazon-a-plus-source-limit"
   | "reference-source-limit"
   | "reference-reference-limit";
 
-const CREATE_JOB_DRAFT_KEY = "commerce-image-studio.create-draft.v1";
+type CreateAgentMappedFields = {
+  productName?: string;
+  sellingPoints?: string;
+  materialInfo?: string;
+  sizeInfo?: string;
+  brandName?: string;
+};
+
+type CreateAgentMapDetail = {
+  agentType?: "image-analyst" | "prompt-engineer";
+  fields?: CreateAgentMappedFields;
+  promptSuggestions?: string[];
+};
+
+const CREATE_AGENT_DRAFT_CONTEXT_EVENT = "create-agent:draft-context";
+const CREATE_FORM_MAPPING_EVENT = "create-agent:map-to-form";
 const INITIAL_SELECTED_TYPES = ["scene", "detail", "pain-point"];
 const SUITE_SELECTED_TYPES = ["main-image", "lifestyle", "feature-overview", "scene", "material-craft", "size-spec"];
 const AMAZON_A_PLUS_SELECTED_TYPES = ["poster", "feature-overview", "multi-scene", "detail", "size-spec", "culture-value"];
@@ -77,6 +98,7 @@ const RATIO_DIRECTION_LABELS: Record<string, { zh: string; en: string }> = {
 const INITIAL_PAYLOAD = {
   creationMode: "standard" as "standard" | "reference-remix" | "prompt" | "suite" | "amazon-a-plus",
   generationSemantics: "joint" as GenerationSemantics,
+  strategyWorkflowMode: "quick" as const,
   referenceRemakeGoal: "hard-remake" as "hard-remake" | "soft-remake" | "structure-remake" | "semantic-remake",
   referenceStrength: "balanced" as "reference" | "balanced" | "product",
   referenceCompositionLock: "balanced" as "strict" | "balanced" | "flexible",
@@ -271,34 +293,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const text = useMemo(() => copyFor(language), [language]);
   const maxImagesPerPrompt = useMemo(() => getMaxImagesPerPromptForModel(defaultImageModel), [defaultImageModel]);
   const suiteModeLabel = language === "zh" ? "套图模式" : "Image set mode";
-  const suiteModeHint =
-    language === "zh"
-      ? "套图模式仅支持 1 张原图，并固定生成 6 个模块。"
-      : "Suite mode supports exactly 1 source image and always generates the fixed 6-image module set.";
-  const suiteModulesSummary =
-    language === "zh"
-      ? "仅支持 1 张原图。固定覆盖：主图、生活方式图、卖点总览、场景图、材质工艺图和尺寸参数图。"
-      : "Supports exactly 1 source image. Fixed coverage: main image, lifestyle, feature overview, scene, material & craft, and size spec.";
-  const suiteMaterialLabel = language === "zh" ? "材质（必填）" : "Material (required)";
-  const suiteSizeLabel = language === "zh" ? "尺寸 / 规格（必填）" : "Size / dimensions (required)";
-  const suiteSellingPointsLabel = language === "zh" ? "卖点（必填）" : "Selling points (required)";
-  const suiteQuantityLabel = language === "zh" ? "套图数量" : "Set count";
-  const suiteModeRequiredHint =
-    language === "zh" ? "套图模式需要品类、卖点、材质和尺寸。" : "Image set mode requires category, selling points, material, and size.";
   const amazonAPlusModeLabel = language === "zh" ? "亚马逊 A+" : "Amazon A+";
-  const amazonAPlusModeHint =
-    language === "zh"
-      ? "亚马逊 A+ 模式仅支持 1 张原图，并固定生成 6 个 A+ 模块。"
-      : "Amazon A+ mode supports exactly 1 source image and always generates the fixed 6-module A+ set.";
-  const amazonAPlusLockedPlatformHint = language === "zh" ? "A+ 模式已锁定为 Amazon 平台。" : "A+ mode is locked to Amazon.";
-  const amazonAPlusContextHint =
-    language === "zh"
-      ? "可补充商品名、品牌、卖点和备注，让 A+ 模块更完整。"
-      : "Optionally add product name, brand, selling points, and notes for more complete A+ modules.";
-  const amazonAPlusModulesSummary =
-    language === "zh"
-      ? "仅支持 1 张原图。固定覆盖：海报、卖点总览、多场景、细节、尺寸参数和文化价值。"
-      : "Supports exactly 1 source image. Fixed coverage: poster, feature overview, multi-scene, detail, size spec, and culture value.";
   const suiteModeInfoText =
     language === "zh"
       ? "套图模式仅支持 1 张原图，超过 1 张原图无法提交。"
@@ -311,13 +306,12 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     language === "zh"
       ? "仅支持 1 张原图 + 1 张参考图，然后执行两阶段 JSON -> 中文提示词工作流。"
       : "Supports exactly 1 source image + 1 reference image, then runs a two-stage JSON -> Chinese prompt workflow.";
-  const referenceRemixWorkflowSummary =
-    language === "zh"
-      ? "原图保持主体真实性，参考图只提供构图、光线、场景语言和视觉表达线索。"
-      : "The source image remains the subject truth, while the reference image only provides composition, lighting, scene language, and visual expression cues.";
-  const amazonAPlusProductLabel = language === "zh" ? "商品名（可选）" : "Product name (optional)";
-  const amazonAPlusSellingPointsLabel = language === "zh" ? "卖点（可选）" : "Selling points (optional)";
-  const amazonAPlusSourceDescriptionLabel = language === "zh" ? "补充说明（可选）" : "Additional notes (optional)";
+  const commerceProductNameLabel = language === "zh" ? "图片名（必填）" : "Image name (required)";
+  const commerceSellingPointsLabel = language === "zh" ? "卖点（选填）" : "Selling points (optional)";
+  const commerceMaterialInfoLabel = language === "zh" ? "材质（选填）" : "Material (optional)";
+  const commerceSizeInfoLabel = language === "zh" ? "尺寸规格（选填）" : "Size / specs (optional)";
+  const commerceBrandNameLabel = language === "zh" ? "品牌名（选填）" : "Brand name (optional)";
+  const structuredGroupsLabel = language === "zh" ? "套图组数" : "Set groups";
   const [isPending, startTransition] = useTransition();
   const [files, setFiles] = useState<File[]>([]);
   const [referenceFiles, setReferenceFiles] = useState<File[]>([]);
@@ -334,8 +328,10 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const [promptMarketOverridesEnabled, setPromptMarketOverridesEnabled] = useState(false);
   const [brands, setBrands] = useState<BrandRecord[]>([]);
   const [payload, setPayload] = useState(INITIAL_PAYLOAD);
+  const isStructuredCommerceMode = payload.creationMode === "standard" || payload.creationMode === "suite" || payload.creationMode === "amazon-a-plus";
   const [variantsInput, setVariantsInput] = useState(String(INITIAL_PAYLOAD.variantsPerType));
   const [draftReady, setDraftReady] = useState(false);
+  const [agentDraftId, setAgentDraftId] = useState(() => createCreateDraftId());
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null);
   const [submitBlockedFeedback, setSubmitBlockedFeedback] = useState(false);
   const [isSourceDropActive, setIsSourceDropActive] = useState(false);
@@ -348,9 +344,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const referenceDropDepthRef = useRef(0);
   const productNameInputRef = useRef<HTMLInputElement | null>(null);
   const promptInputRefs = useRef<Array<HTMLTextAreaElement | null>>([]);
-  const suiteSellingPointsInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const suiteMaterialInfoInputRef = useRef<HTMLTextAreaElement | null>(null);
-  const suiteSizeInfoInputRef = useRef<HTMLTextAreaElement | null>(null);
   const variantsInputRef = useRef<HTMLInputElement | null>(null);
   const submitBlockedTimerRef = useRef<number | null>(null);
   const [viewportLayout, setViewportLayout] = useState({
@@ -358,6 +351,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     cramped: false,
     availableHeight: 0,
   });
+
   const currentGenerationSemantics = payload.generationSemantics;
   const currentReferenceImageCount = payload.creationMode === "reference-remix" ? referenceFiles.length : 0;
   const isSingleSourceMode =
@@ -494,20 +488,8 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       return "variants";
     }
 
-    if (payload.creationMode === "standard" && !payload.productName.trim()) {
+    if (isStructuredCommerceMode && !payload.productName.trim()) {
       return "product-name";
-    }
-
-    if (payload.creationMode === "suite" && !payload.sellingPoints.trim()) {
-      return "suite-selling-points";
-    }
-
-    if (payload.creationMode === "suite" && !payload.materialInfo.trim()) {
-      return "suite-material";
-    }
-
-    if (payload.creationMode === "suite" && !payload.sizeInfo.trim()) {
-      return "suite-size";
     }
 
     return null;
@@ -515,12 +497,10 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     files.length,
     isPending,
     currentRequestImageCount,
+    isStructuredCommerceMode,
     maxImagesPerPrompt,
     payload.creationMode,
-    payload.materialInfo,
     payload.productName,
-    payload.sellingPoints,
-    payload.sizeInfo,
     parsedVariantsPerType,
     promptModeHasFilledPrompt,
     referenceFiles.length,
@@ -562,10 +542,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       return variantsValidationMessage;
     }
 
-    if (reason === "suite-selling-points" || reason === "suite-material" || reason === "suite-size") {
-      return suiteModeRequiredHint;
-    }
-
     if (reason === "product-name") {
       return language === "zh" ? "请先填写图片名。" : "Please fill in the image name first.";
     }
@@ -579,11 +555,13 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     try {
       const rawDraft = window.localStorage.getItem(CREATE_JOB_DRAFT_KEY);
       if (!rawDraft) {
+        setAgentDraftId(createCreateDraftId());
         setDraftReady(true);
         return;
       }
 
       const draft = JSON.parse(rawDraft) as {
+        draftId?: string;
         payload?: (typeof INITIAL_PAYLOAD) & { customPrompt?: string; customNegativePrompt?: string; promptInputs?: string[] };
         selectedTypes?: string[];
         selectedRatios?: string[];
@@ -592,6 +570,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
         promptMarketOverridesEnabled?: boolean;
         recommendationMessage?: string;
       };
+      setAgentDraftId(readCreateDraftIdFromDraftJson(rawDraft) ?? createCreateDraftId());
 
       if (draft.payload) {
         const draftPayload = draft.payload;
@@ -611,6 +590,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
         setPayload((current) => ({
           ...current,
           ...draftPayloadRest,
+          strategyWorkflowMode: "quick",
           promptInputs: migratedPromptInputs,
         }));
         setVariantsInput(String(draftPayload.variantsPerType ?? INITIAL_PAYLOAD.variantsPerType));
@@ -637,6 +617,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
 
     } catch {
       window.localStorage.removeItem(CREATE_JOB_DRAFT_KEY);
+      setAgentDraftId(createCreateDraftId());
     } finally {
       setDraftReady(true);
     }
@@ -675,6 +656,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     window.localStorage.setItem(
       CREATE_JOB_DRAFT_KEY,
       JSON.stringify({
+        draftId: agentDraftId,
         payload,
         selectedTypes,
         selectedRatios,
@@ -686,6 +668,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     );
   }, [
     autoLanguageByCountry,
+    agentDraftId,
     promptMarketOverridesEnabled,
     draftReady,
     payload,
@@ -694,6 +677,14 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     selectedResolutions,
     selectedTypes,
   ]);
+
+  useEffect(() => {
+    if (!draftReady) {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent(CREATE_AGENT_DRAFT_CONTEXT_EVENT, { detail: { draftId: agentDraftId } }));
+  }, [agentDraftId, draftReady]);
 
   useEffect(() => {
     if (!draftReady || !shouldWarnBeforeLeave) {
@@ -1184,6 +1175,81 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     setReferencePreviewIndex((current) => (current === referencePreviewUrls.length - 1 ? 0 : current + 1));
   }
 
+  async function submitCreateJob() {
+    const submitVariantsPerType = payload.creationMode === "prompt" ? 1 : parsedVariantsPerType;
+    if (submitVariantsPerType === null) {
+      triggerSubmitBlockedFeedback("variants");
+      return;
+    }
+
+    const submitSelectedResolutions = [normalizeSelectedResolutions(selectedResolutions)[0]];
+    let referenceLayoutOverride: unknown = null;
+    let referencePosterCopyOverride: unknown = null;
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append("files", file);
+    }
+    if (payload.creationMode === "reference-remix") {
+      for (const file of referenceFiles) {
+        formData.append("referenceFiles", file);
+      }
+    }
+
+    formData.append(
+      "payload",
+      JSON.stringify({
+        ...payload,
+        sku: "",
+        promptInputs: payload.creationMode === "prompt" ? normalizedPromptInputs : undefined,
+        customNegativePrompt: payload.creationMode === "prompt" ? undefined : (payload as { customNegativePrompt?: string }).customNegativePrompt,
+        variantsPerType: submitVariantsPerType,
+        selectedTypes: effectiveSelectedTypes,
+        selectedRatios,
+        selectedResolutions: submitSelectedResolutions,
+        marketingStrategy: undefined,
+        imageStrategies: undefined,
+        referenceRemakeGoal: undefined,
+        referenceStrength: undefined,
+        referenceCompositionLock: undefined,
+        referenceTextRegionPolicy: undefined,
+        referenceBackgroundMode: undefined,
+        preserveReferenceText: undefined,
+        referenceCopyMode: undefined,
+        referenceExtraPrompt: undefined,
+        referenceNegativePrompt: undefined,
+        referenceLayoutOverride: payload.creationMode === "reference-remix" ? null : referenceLayoutOverride,
+        referencePosterCopyOverride: payload.creationMode === "reference-remix" ? null : referencePosterCopyOverride,
+        temporaryProvider: {
+          apiKey: payload.temporaryApiKey,
+          apiBaseUrl: payload.temporaryApiBaseUrl,
+          apiVersion: payload.temporaryApiVersion,
+          apiHeaders: payload.temporaryApiHeaders,
+        },
+        uiLanguage: language,
+      }),
+    );
+
+    const response = await fetch("/api/generate", {
+      method: "POST",
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const rawText = await response.text().catch(() => "");
+      let parsedBody: { error?: string } | null = null;
+      try {
+        parsedBody = rawText ? (JSON.parse(rawText) as { error?: string }) : null;
+      } catch {
+        parsedBody = null;
+      }
+      throw new Error(parsedBody?.error || rawText || text.generateError);
+    }
+
+    const body = (await response.json()) as { jobId: string };
+    window.localStorage.removeItem(CREATE_JOB_DRAFT_KEY);
+    setSubmittedJobId(body.jobId);
+  }
+
   function applyRecommendedSetup() {
     if (payload.creationMode !== "standard") {
       return;
@@ -1206,6 +1272,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   }
 
   function prepareNextCreate() {
+    setAgentDraftId(createCreateDraftId());
     setFiles([]);
     setReferenceFiles([]);
     setPreviewUrls([]);
@@ -1272,24 +1339,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
         return;
       }
 
-      if (reason === "suite-selling-points") {
-        suiteSellingPointsInputRef.current?.focus();
-        suiteSellingPointsInputRef.current?.select();
-        return;
-      }
-
-      if (reason === "suite-material") {
-        suiteMaterialInfoInputRef.current?.focus();
-        suiteMaterialInfoInputRef.current?.select();
-        return;
-      }
-
-      if (reason === "suite-size") {
-        suiteSizeInfoInputRef.current?.focus();
-        suiteSizeInfoInputRef.current?.select();
-        return;
-      }
-
       productNameInputRef.current?.focus();
       productNameInputRef.current?.select();
     }, 0);
@@ -1317,79 +1366,9 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       return;
     }
 
-    const submitVariantsPerType = payload.creationMode === "prompt" ? 1 : parsedVariantsPerType;
-    if (submitVariantsPerType === null) {
-      triggerSubmitBlockedFeedback("variants");
-      return;
-    }
-
-    const submitSelectedResolutions = [normalizeSelectedResolutions(selectedResolutions)[0]];
-    let referenceLayoutOverride: unknown = null;
-    let referencePosterCopyOverride: unknown = null;
-
     startTransition(async () => {
       try {
-        const formData = new FormData();
-        for (const file of files) {
-          formData.append("files", file);
-        }
-        if (payload.creationMode === "reference-remix") {
-          for (const file of referenceFiles) {
-            formData.append("referenceFiles", file);
-          }
-        }
-        formData.append(
-          "payload",
-          JSON.stringify({
-            ...payload,
-            sku: "",
-            promptInputs: payload.creationMode === "prompt" ? normalizedPromptInputs : undefined,
-            customNegativePrompt: payload.creationMode === "prompt" ? undefined : (payload as { customNegativePrompt?: string }).customNegativePrompt,
-            variantsPerType: submitVariantsPerType,
-            selectedTypes: effectiveSelectedTypes,
-            selectedRatios,
-            selectedResolutions: submitSelectedResolutions,
-            referenceRemakeGoal: undefined,
-            referenceStrength: undefined,
-            referenceCompositionLock: undefined,
-            referenceTextRegionPolicy: undefined,
-            referenceBackgroundMode: undefined,
-            preserveReferenceText: undefined,
-            referenceCopyMode: undefined,
-            referenceExtraPrompt: undefined,
-            referenceNegativePrompt: undefined,
-            referenceLayoutOverride: payload.creationMode === "reference-remix" ? null : referenceLayoutOverride,
-            referencePosterCopyOverride: payload.creationMode === "reference-remix" ? null : referencePosterCopyOverride,
-            temporaryProvider: {
-              apiKey: payload.temporaryApiKey,
-              apiBaseUrl: payload.temporaryApiBaseUrl,
-              apiVersion: payload.temporaryApiVersion,
-              apiHeaders: payload.temporaryApiHeaders,
-            },
-            uiLanguage: language,
-          }),
-        );
-
-        const response = await fetch("/api/generate", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const rawText = await response.text().catch(() => "");
-          let parsedBody: { error?: string } | null = null;
-          try {
-            parsedBody = rawText ? (JSON.parse(rawText) as { error?: string }) : null;
-          } catch {
-            parsedBody = null;
-          }
-          setErrorMessage(parsedBody?.error || rawText || text.generateError);
-          return;
-        }
-
-        const body = (await response.json()) as { jobId: string };
-        window.localStorage.removeItem(CREATE_JOB_DRAFT_KEY);
-        setSubmittedJobId(body.jobId);
+        await submitCreateJob();
       } catch (error) {
         setErrorMessage(error instanceof Error && error.message ? error.message : text.generateError);
       }
@@ -1428,28 +1407,17 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const currentPreviewUrl = previewUrls[previewIndex] ?? null;
   const currentReferencePreviewUrl = referencePreviewUrls[referencePreviewIndex] ?? null;
   const resolutionOptions = RESOLUTIONS;
+  const hasStructuredSizeInfo = Boolean(payload.sizeInfo.trim());
   const effectiveSelectedTypes =
     payload.creationMode === "prompt" || payload.creationMode === "reference-remix"
       ? ["scene"]
-      : payload.creationMode === "suite"
-        ? SUITE_SELECTED_TYPES
-        : payload.creationMode === "amazon-a-plus"
-          ? AMAZON_A_PLUS_SELECTED_TYPES
-          : selectedTypes;
+      : [
+          ...selectedTypes.filter((type) => hasStructuredSizeInfo || type !== "size-spec"),
+          ...(hasStructuredSizeInfo && !selectedTypes.includes("size-spec") ? ["size-spec"] : []),
+        ];
+  const effectiveTypeCount = effectiveSelectedTypes.length;
   const generationSemanticsLabel =
     currentGenerationSemantics === "joint" ? text.generationSemanticsJoint : text.generationSemanticsBatch;
-  const generationHint =
-    payload.creationMode === "prompt"
-      ? files.length === 0
-        ? text.promptModePanelHintNoSources
-        : text.promptModePanelHintWithSources
-      : payload.creationMode === "suite"
-        ? suiteModulesSummary
-      : payload.creationMode === "amazon-a-plus"
-        ? amazonAPlusModulesSummary
-      : payload.creationMode === "reference-remix"
-        ? referenceRemixModeInfoText
-        : recommendationMessage || text.hint;
   const joinSummaryParts = (parts: Array<string | null | undefined>) =>
     parts
       .map((part) => part?.trim())
@@ -1475,7 +1443,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
           payload.platform ? labelFor(payload.platform, language, PLATFORMS) : "",
           suiteModeLabel,
           generationSemanticsLabel,
-          effectiveSelectedTypes.length ? `${effectiveSelectedTypes.length} ${text.typesUnit}` : "",
+          effectiveTypeCount ? `${effectiveTypeCount} ${text.typesUnit}` : "",
           selectedRatios[0],
           selectedResolutions[0],
         ])
@@ -1485,7 +1453,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
           payload.language ? labelFor(payload.language, language, OUTPUT_LANGUAGES) : "",
           amazonAPlusModeLabel,
           generationSemanticsLabel,
-          effectiveSelectedTypes.length ? `${effectiveSelectedTypes.length} ${text.typesUnit}` : "",
+          effectiveTypeCount ? `${effectiveTypeCount} ${text.typesUnit}` : "",
           selectedRatios[0],
           selectedResolutions[0],
           ])
@@ -1494,7 +1462,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
           payload.platform ? labelFor(payload.platform, language, PLATFORMS) : "",
           text.standardMode,
           generationSemanticsLabel,
-          selectedTypes.length ? `${selectedTypes.length} ${text.typesUnit}` : "",
+          effectiveTypeCount ? `${effectiveTypeCount} ${text.typesUnit}` : "",
           selectedRatios[0],
           selectedResolutions[0],
         ]);
@@ -1512,18 +1480,11 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       ? promptRequestCount
       : parsedVariantsPerType === null
       ? null
-      : getPlannedRequestCount({
-          creationMode: payload.creationMode,
-          generationSemantics: currentGenerationSemantics,
-          sourceImageCount: files.length,
-          typeCount: effectiveSelectedTypes.length,
-          ratioCount: selectedRatios.length,
-          resolutionCount: selectedResolutions.length,
-          variantsPerType: parsedVariantsPerType,
-        });
+      : requestInputCount * effectiveTypeCount * parsedVariantsPerType;
   const requestCountValue = requestCount === null ? "--" : String(requestCount);
   const selectedRatioDirection = language === "zh" ? "单选" : "Single select";
   const actualGenerationLabel = language === "zh" ? "实际生成数量" : "Actual outputs";
+  const submitButtonLabel = text.submit;
   const requestInputLabel =
     payload.creationMode === "prompt"
       ? files.length === 0
@@ -1546,8 +1507,47 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
         ? `${requestInputLabel} × ${normalizedPromptInputs.length} 条提示词 × ${selectedRatios.length} 个比例 × ${selectedResolutions.length} 个分辨率`
         : `${requestInputLabel} x ${normalizedPromptInputs.length} prompt x ${selectedRatios.length} ratio x ${selectedResolutions.length} resolution`
       : language === "zh"
-        ? `${requestInputLabel} × ${effectiveSelectedTypes.length} 个类型 × ${selectedRatios.length} 个比例 × ${selectedResolutions.length} 个分辨率 × ${parsedVariantsPerType ?? "-"} 个数量`
-        : `${requestInputLabel} x ${effectiveSelectedTypes.length} type x ${selectedRatios.length} ratio x ${selectedResolutions.length} resolution x ${parsedVariantsPerType ?? "-"} qty`;
+        ? `${requestInputLabel} × ${effectiveTypeCount} 个类型 × ${parsedVariantsPerType ?? "-"} 组`
+        : `${requestInputLabel} x ${effectiveTypeCount} type x ${parsedVariantsPerType ?? "-"} groups`;
+  useEffect(() => {
+    function handleCreateAgentMap(event: Event) {
+      const mapped = (event as CustomEvent<CreateAgentMapDetail>).detail;
+      if (!mapped || typeof mapped !== "object") {
+        return;
+      }
+
+      const mappedPromptInputs =
+        mapped.agentType === "prompt-engineer" && Array.isArray(mapped.promptSuggestions) && mapped.promptSuggestions.length > 0
+          ? resolveMappedPromptInputs({
+              promptSuggestions: mapped.promptSuggestions,
+              targetPromptCount: requestCount,
+            })
+          : null;
+      const mappedFields = mapped.fields ?? {};
+
+      if (mappedPromptInputs) {
+        setPromptMarketOverridesEnabled(false);
+      }
+
+      setPayload((current) => ({
+        ...current,
+        productName: mappedFields.productName ?? current.productName,
+        sellingPoints: mappedFields.sellingPoints ?? current.sellingPoints,
+        materialInfo: mappedFields.materialInfo ?? current.materialInfo,
+        sizeInfo: mappedFields.sizeInfo ?? current.sizeInfo,
+        brandName: mappedFields.brandName ?? current.brandName,
+        creationMode: mappedPromptInputs ? "prompt" : current.creationMode,
+        strategyWorkflowMode: mappedPromptInputs ? "quick" : current.strategyWorkflowMode,
+        platform: mappedPromptInputs ? INITIAL_PAYLOAD.platform : current.platform,
+        promptInputs: mappedPromptInputs ?? current.promptInputs,
+      }));
+    }
+
+    window.addEventListener(CREATE_FORM_MAPPING_EVENT, handleCreateAgentMap as EventListener);
+    return () => {
+      window.removeEventListener(CREATE_FORM_MAPPING_EVENT, handleCreateAgentMap as EventListener);
+    };
+  }, [requestCount]);
   const currentPlatformLabel =
     payload.creationMode === "amazon-a-plus" ? "Amazon" : labelFor(payload.platform, language, PLATFORMS);
   const selectedResolutionLabel = labelFor(selectedResolutions[0] ?? "4K", language, RESOLUTIONS);
@@ -1575,9 +1575,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const promptRows = viewportLayout.cramped ? 3 : viewportLayout.compact ? 4 : 5;
   const longRows = viewportLayout.compact ? 2 : 3;
   const mediumRows = 2;
-  const jsonRows = viewportLayout.cramped ? 5 : viewportLayout.compact ? 6 : 8;
-  const posterJsonRows = viewportLayout.cramped ? 4 : viewportLayout.compact ? 5 : 6;
-  const headerRows = viewportLayout.compact ? 3 : 4;
   function activateReferenceRemixMode() {
     setPromptMarketOverridesEnabled(false);
     setSelectedTypes(["scene"]);
@@ -1587,6 +1584,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     setPayload((current) => ({
       ...current,
       creationMode: "reference-remix",
+      strategyWorkflowMode: "quick",
       country: "",
       language: "",
       platform: "",
@@ -1596,6 +1594,26 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       variantsPerType: 1,
     }));
   }
+
+  function activateStructuredMode(nextMode: "standard" | "suite" | "amazon-a-plus") {
+    const nextSelectedTypes =
+      nextMode === "suite"
+        ? SUITE_SELECTED_TYPES
+        : nextMode === "amazon-a-plus"
+          ? AMAZON_A_PLUS_SELECTED_TYPES
+          : INITIAL_SELECTED_TYPES;
+
+    setSelectedTypes(nextSelectedTypes);
+    setSelectedRatios([selectedRatios[0] ?? "1:1"]);
+    setSelectedResolutions([normalizeSelectedResolutions(selectedResolutions)[0]]);
+    setPayload((current) => ({
+      ...current,
+      creationMode: nextMode,
+      strategyWorkflowMode: "quick",
+      platform: nextMode === "amazon-a-plus" ? "amazon" : current.platform || INITIAL_PAYLOAD.platform,
+    }));
+  }
+
   const generationSemanticsSelector = (
     <div
       aria-label={text.generationSemanticsLabel}
@@ -1633,7 +1651,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
           <input
             checked={payload.creationMode === "standard"}
             name="creation-mode"
-            onChange={() => setPayload((current) => ({ ...current, creationMode: "standard" }))}
+            onChange={() => activateStructuredMode("standard")}
             type="radio"
           />
           <span>{text.standardMode}</span>
@@ -1642,7 +1660,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
           <input
             checked={payload.creationMode === "suite"}
             name="creation-mode"
-            onChange={() => setPayload((current) => ({ ...current, creationMode: "suite" }))}
+            onChange={() => activateStructuredMode("suite")}
             type="radio"
           />
           <span>{suiteModeLabel}</span>
@@ -1651,7 +1669,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
           <input
             checked={payload.creationMode === "amazon-a-plus"}
             name="creation-mode"
-            onChange={() => setPayload((current) => ({ ...current, creationMode: "amazon-a-plus", platform: "amazon" }))}
+            onChange={() => activateStructuredMode("amazon-a-plus")}
             type="radio"
           />
           <span>{amazonAPlusModeLabel}</span>
@@ -1665,6 +1683,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
               setPayload((current) => ({
                 ...current,
                 creationMode: "prompt",
+                strategyWorkflowMode: "quick",
                 platform: INITIAL_PAYLOAD.platform,
               }));
             }}
@@ -1764,10 +1783,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                   onDragOver={handleSourceDragOver}
                   onDrop={handleSourceDrop}
                 >
-                  <div className="preview-stage-empty-content">
-                    <p className="helper">{text.dropToUpload}</p>
-                    <p className="helper">{text.livePreviewEmpty}</p>
-                  </div>
+                  <div className="preview-stage-empty-content" />
                 </div>
               )}
             </section>
@@ -1847,10 +1863,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                     onDragOver={handleReferenceDragOver}
                     onDrop={handleReferenceDrop}
                   >
-                    <div className="preview-stage-empty-content">
-                      <p className="helper">{text.dropToUpload}</p>
-                      <p className="helper">{text.referencePreviewEmpty}</p>
-                    </div>
+                    <div className="preview-stage-empty-content" />
                   </div>
                 )}
               </section>
@@ -1988,118 +2001,10 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                   </label>
                 </>
               ) : null}
-              {payload.creationMode === "suite" ? (
+              {isStructuredCommerceMode ? (
                 <>
                   <label>
-                    <span>{text.category}</span>
-                    <select value={payload.category} onChange={(event) => setPayload({ ...payload, category: event.target.value })}>
-                      {PRODUCT_CATEGORIES.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label[language]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>{text.brandName}</span>
-                    <input
-                      list="brand-library-options"
-                      value={payload.brandName}
-                      onChange={(event) => setPayload({ ...payload, brandName: event.target.value })}
-                    />
-                    <datalist id="brand-library-options">
-                      {brands.map((brand) => (
-                        <option key={brand.id} value={brand.name} />
-                      ))}
-                    </datalist>
-                    <small className="helper">{text.brandLibraryHint}</small>
-                  </label>
-                  <label>
-                    <span>{suiteSellingPointsLabel}</span>
-                    <textarea
-                      ref={suiteSellingPointsInputRef}
-                      rows={longRows}
-                      value={payload.sellingPoints}
-                      onChange={(event) => setPayload({ ...payload, sellingPoints: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    <span>{suiteMaterialLabel}</span>
-                    <textarea
-                      ref={suiteMaterialInfoInputRef}
-                      rows={mediumRows}
-                      value={payload.materialInfo}
-                      onChange={(event) => setPayload({ ...payload, materialInfo: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    <span>{suiteSizeLabel}</span>
-                    <textarea
-                      ref={suiteSizeInfoInputRef}
-                      rows={mediumRows}
-                      value={payload.sizeInfo}
-                      onChange={(event) => setPayload({ ...payload, sizeInfo: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    <span>{text.sourceDescription}</span>
-                    <textarea rows={mediumRows} value={payload.sourceDescription} onChange={(event) => setPayload({ ...payload, sourceDescription: event.target.value })} />
-                    <small className="helper">{suiteModeInfoText}</small>
-                    <small className="helper">{suiteModulesSummary}</small>
-                  </label>
-                </>
-              ) : null}
-              {payload.creationMode === "amazon-a-plus" ? (
-                <>
-                  <label>
-                    <span>{amazonAPlusProductLabel}</span>
-                    <input
-                      ref={productNameInputRef}
-                      value={payload.productName}
-                      onChange={(event) => setPayload({ ...payload, productName: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    <span>{text.brandName}</span>
-                    <input
-                      list="brand-library-options"
-                      value={payload.brandName}
-                      onChange={(event) => setPayload({ ...payload, brandName: event.target.value })}
-                    />
-                    <datalist id="brand-library-options">
-                      {brands.map((brand) => (
-                        <option key={brand.id} value={brand.name} />
-                      ))}
-                    </datalist>
-                    <small className="helper">{text.brandLibraryHint}</small>
-                  </label>
-                  <label>
-                    <span>{text.category}</span>
-                    <select value={payload.category} onChange={(event) => setPayload({ ...payload, category: event.target.value })}>
-                      {PRODUCT_CATEGORIES.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label[language]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>{amazonAPlusSellingPointsLabel}</span>
-                    <textarea rows={mediumRows} value={payload.sellingPoints} onChange={(event) => setPayload({ ...payload, sellingPoints: event.target.value })} />
-                  </label>
-                  <label>
-                    <span>{amazonAPlusSourceDescriptionLabel}</span>
-                    <textarea rows={mediumRows} value={payload.sourceDescription} onChange={(event) => setPayload({ ...payload, sourceDescription: event.target.value })} />
-                    <small className="helper">{amazonAPlusModeInfoText}</small>
-                    <small className="helper">{amazonAPlusModulesSummary}</small>
-                    <small className="helper">{amazonAPlusContextHint}</small>
-                  </label>
-                </>
-              ) : null}
-              {payload.creationMode === "standard" ? (
-                <>
-                  <label>
-                    <span>{text.productName}</span>
+                    <span>{commerceProductNameLabel}</span>
                     <input
                       ref={productNameInputRef}
                       required
@@ -2108,7 +2013,31 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                     />
                   </label>
                   <label>
-                    <span>{text.brandName}</span>
+                    <span>{commerceSellingPointsLabel}</span>
+                    <textarea
+                      rows={longRows}
+                      value={payload.sellingPoints}
+                      onChange={(event) => setPayload({ ...payload, sellingPoints: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>{commerceMaterialInfoLabel}</span>
+                    <textarea
+                      rows={mediumRows}
+                      value={payload.materialInfo}
+                      onChange={(event) => setPayload({ ...payload, materialInfo: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>{commerceSizeInfoLabel}</span>
+                    <textarea
+                      rows={mediumRows}
+                      value={payload.sizeInfo}
+                      onChange={(event) => setPayload({ ...payload, sizeInfo: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    <span>{commerceBrandNameLabel}</span>
                     <input
                       list="brand-library-options"
                       value={payload.brandName}
@@ -2119,79 +2048,39 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                         <option key={brand.id} value={brand.name} />
                       ))}
                     </datalist>
-                    <small className="helper">{text.brandLibraryHint}</small>
-                  </label>
-                  <label>
-                    <span>{text.category}</span>
-                    <select value={payload.category} onChange={(event) => setPayload({ ...payload, category: event.target.value })}>
-                      {PRODUCT_CATEGORIES.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label[language]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>{text.sellingPoints}</span>
-                    <textarea rows={longRows} value={payload.sellingPoints} onChange={(event) => setPayload({ ...payload, sellingPoints: event.target.value })} />
-                  </label>
-                  <label>
-                    <span>{text.restrictions}</span>
-                    <textarea rows={mediumRows} value={payload.restrictions} onChange={(event) => setPayload({ ...payload, restrictions: event.target.value })} />
-                  </label>
-                  <label>
-                    <span>{text.sourceDescription}</span>
-                    <textarea rows={mediumRows} value={payload.sourceDescription} onChange={(event) => setPayload({ ...payload, sourceDescription: event.target.value })} />
                   </label>
                 </>
-              ) : null}
-              {payload.creationMode === "reference-remix" ? (
-                <div className="create-mode-info-block create-mode-info-block-remix">
-                  <p>{referenceRemixModeInfoText}</p>
-                  <p>{referenceRemixWorkflowSummary}</p>
-                </div>
               ) : null}
               </div>
               <aside className="create-base-side">
                 <div className="create-base-side-stack">
-                  {payload.creationMode === "reference-remix" ? (
-                    <div className="create-mode-info-block create-mode-info-block-remix">
-                      <p>{referenceRemixModeInfoText}</p>
-                      <p>{referenceRemixWorkflowSummary}</p>
-                    </div>
-                  ) : null}
-                  {payload.creationMode === "standard" ? (
+                  {isStructuredCommerceMode ? (
                     <fieldset className="create-generation-fieldset create-generation-fieldset-types">
-                      <legend>{text.imageTypes}</legend>
-                      <div className="chip-grid chip-grid-types">
-                        {IMAGE_TYPE_OPTIONS.map((option) => (
-                          <label className={selectedTypes.includes(option.value) ? "chip is-active" : "chip"} key={option.value}>
-                            <input checked={selectedTypes.includes(option.value)} onChange={() => toggleSelection(option.value, selectedTypes, setSelectedTypes)} type="checkbox" />
-                            <span>{option.label[language]}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </fieldset>
-                  ) : payload.creationMode === "suite" ? (
-                    <fieldset className="create-generation-fieldset create-generation-fieldset-types">
-                      <legend>{text.imageTypes}</legend>
-                      <div className="chip-grid chip-grid-types">
-                        {SUITE_SELECTED_TYPES.map((imageType) => (
-                          <span className="chip is-active" key={imageType}>
-                            <span>{labelFor(imageType, language, IMAGE_TYPE_OPTIONS)}</span>
-                          </span>
-                        ))}
-                      </div>
-                    </fieldset>
-                  ) : payload.creationMode === "amazon-a-plus" ? (
-                    <fieldset className="create-generation-fieldset create-generation-fieldset-types">
-                      <legend>{text.imageTypes}</legend>
-                      <div className="chip-grid chip-grid-types">
-                        {AMAZON_A_PLUS_SELECTED_TYPES.map((imageType) => (
-                          <span className="chip is-active" key={imageType}>
-                            <span>{labelFor(imageType, language, IMAGE_TYPE_OPTIONS)}</span>
-                          </span>
-                        ))}
+                      <legend>
+                        <span>{text.imageTypes}</span>
+                        <span className="create-generation-legend-note">({text.typesUnit})</span>
+                      </legend>
+                      <div className="chip-grid small">
+                        {IMAGE_TYPE_OPTIONS.map((option) => {
+                          const isDisabled = option.value === "size-spec" && !hasStructuredSizeInfo;
+                          const isAutoSizeType = option.value === "size-spec" && hasStructuredSizeInfo;
+                          const isChecked = isAutoSizeType ? true : selectedTypes.includes(option.value);
+                          return (
+                            <label
+                              className={isChecked ? "chip is-active" : "chip"}
+                              key={option.value}
+                              title={option.description?.[language]}
+                            >
+                              <input
+                                checked={isChecked}
+                                disabled={isDisabled || isAutoSizeType}
+                                onChange={() => toggleSelection(option.value, selectedTypes, setSelectedTypes)}
+                                type="checkbox"
+                              />
+                              <span>{option.label[language]}</span>
+                            </label>
+                          );
+                        })}
                       </div>
                     </fieldset>
                   ) : null}
@@ -2227,15 +2116,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                 <div className={payload.creationMode === "reference-remix" ? "create-quantity-submit-group create-quantity-submit-group-inline is-remix-mode" : "create-quantity-submit-group create-quantity-submit-group-inline"}>
                   {payload.creationMode !== "reference-remix" && payload.creationMode !== "prompt" ? (
                     <label className="create-quantity-field create-quantity-card">
-                      <span>
-                        {payload.creationMode === "suite"
-                          ? suiteQuantityLabel
-                          : payload.creationMode === "amazon-a-plus"
-                            ? language === "zh"
-                              ? "每个模块生成数量"
-                              : "Per-module count"
-                            : text.variants}
-                      </span>
+                      <span>{structuredGroupsLabel}</span>
                       <input
                         ref={variantsInputRef}
                         min={1}
@@ -2288,7 +2169,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                       title={isSubmitBlocked ? submitBlockedMessage : undefined}
                       type={isSubmitBlocked ? "button" : "submit"}
                     >
-                      {isPending ? text.submitting : text.submit}
+                      {isPending ? text.submitting : submitButtonLabel}
                     </button>
                   </div>
                 </div>

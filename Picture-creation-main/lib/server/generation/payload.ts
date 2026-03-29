@@ -60,13 +60,59 @@ function normalizePromptInputs(payload: CreatePayload): string[] {
   return fallback ? [fallback] : [];
 }
 
+function isMarketingStrategyMode(creationMode: CreatePayload["creationMode"]) {
+  return creationMode === "standard" || creationMode === "suite" || creationMode === "amazon-a-plus";
+}
+
+function normalizeStructuredSelectedTypes(payload: CreatePayload) {
+  const normalized = Array.isArray(payload.selectedTypes)
+    ? payload.selectedTypes.map((value) => value.trim()).filter(Boolean)
+    : [];
+
+  if (payload.sizeInfo?.trim() && !normalized.includes("size-spec")) {
+    normalized.push("size-spec");
+  }
+
+  return normalized;
+}
+
 export function normalizeCreatePayload(payload: CreatePayload): CreatePayload {
   const generationSemantics = normalizeGenerationSemantics(payload.generationSemantics);
+  const strategyWorkflowMode = payload.strategyWorkflowMode ?? "quick";
+  const normalizedStructuredFields = {
+    productName: payload.productName?.trim() ?? "",
+    brandName: payload.brandName?.trim() ?? "",
+    sellingPoints: payload.sellingPoints?.trim() ?? "",
+    materialInfo: payload.materialInfo?.trim() ?? "",
+    sizeInfo: payload.sizeInfo?.trim() ?? "",
+    category: "general",
+    restrictions: "",
+    sourceDescription: "",
+  };
 
   if (payload.creationMode === "reference-remix") {
     return {
       ...payload,
       generationSemantics,
+      sku: "",
+      referenceRemakeGoal: "hard-remake",
+      referenceStrength: "balanced",
+      referenceCompositionLock: "balanced",
+      referenceTextRegionPolicy: "preserve",
+      referenceBackgroundMode: "preserve",
+      preserveReferenceText: true,
+      referenceCopyMode: "reference",
+      productName: "",
+      brandName: "",
+      category: "",
+      sellingPoints: "",
+      restrictions: "",
+      sourceDescription: "",
+      materialInfo: "",
+      sizeInfo: "",
+      customNegativePrompt: "",
+      referenceExtraPrompt: "",
+      referenceNegativePrompt: "",
       country: "",
       language: "",
       platform: "",
@@ -82,21 +128,47 @@ export function normalizeCreatePayload(payload: CreatePayload): CreatePayload {
   if (payload.creationMode === "suite") {
     return {
       ...payload,
+      ...normalizedStructuredFields,
       generationSemantics,
-      selectedTypes: ["main-image", "lifestyle", "feature-overview", "scene", "material-craft", "size-spec"],
+      strategyWorkflowMode,
+      selectedTypes: normalizeStructuredSelectedTypes(payload),
+      selectedRatios: payload.selectedRatios?.length ? [payload.selectedRatios[0]] : ["1:1"],
+      selectedResolutions: payload.selectedResolutions?.length ? [payload.selectedResolutions[0]] : ["4K"],
       includeCopyLayout: false,
       selectedTemplateOverrides: {},
+      marketingStrategy: undefined,
+      imageStrategies: undefined,
     };
   }
 
   if (payload.creationMode === "amazon-a-plus") {
     return {
       ...payload,
+      ...normalizedStructuredFields,
       generationSemantics,
+      strategyWorkflowMode,
       platform: "amazon",
-      selectedTypes: ["poster", "feature-overview", "multi-scene", "detail", "size-spec", "culture-value"],
+      selectedTypes: normalizeStructuredSelectedTypes(payload),
+      selectedRatios: payload.selectedRatios?.length ? [payload.selectedRatios[0]] : ["1:1"],
+      selectedResolutions: payload.selectedResolutions?.length ? [payload.selectedResolutions[0]] : ["4K"],
       includeCopyLayout: false,
       selectedTemplateOverrides: {},
+      marketingStrategy: undefined,
+      imageStrategies: undefined,
+    };
+  }
+
+  if (payload.creationMode === "standard") {
+    return {
+      ...payload,
+      ...normalizedStructuredFields,
+      strategyWorkflowMode,
+      generationSemantics,
+      selectedTypes: normalizeStructuredSelectedTypes(payload),
+      selectedRatios: payload.selectedRatios?.length ? [payload.selectedRatios[0]] : ["1:1"],
+      selectedResolutions: payload.selectedResolutions?.length ? [payload.selectedResolutions[0]] : ["4K"],
+      marketingStrategy: undefined,
+      imageStrategies: undefined,
     };
   }
 
@@ -105,6 +177,26 @@ export function normalizeCreatePayload(payload: CreatePayload): CreatePayload {
     return {
       ...payload,
       generationSemantics: "joint",
+      strategyWorkflowMode,
+      sku: "",
+      referenceRemakeGoal: "hard-remake",
+      referenceStrength: "balanced",
+      referenceCompositionLock: "balanced",
+      referenceTextRegionPolicy: "preserve",
+      referenceBackgroundMode: "preserve",
+      preserveReferenceText: true,
+      referenceCopyMode: "reference",
+      productName: "",
+      brandName: "",
+      category: "",
+      sellingPoints: "",
+      restrictions: "",
+      sourceDescription: "",
+      materialInfo: "",
+      sizeInfo: "",
+      customNegativePrompt: "",
+      referenceExtraPrompt: "",
+      referenceNegativePrompt: "",
       selectedTypes: ["scene"],
       variantsPerType: 1,
       promptInputs,
@@ -114,6 +206,7 @@ export function normalizeCreatePayload(payload: CreatePayload): CreatePayload {
 
   return {
     ...payload,
+    strategyWorkflowMode,
     generationSemantics,
   };
 }
@@ -125,6 +218,9 @@ export function validateCreatePayload(
     sourceFileCount: number;
     referenceFileCount: number;
   },
+  options: {
+    skipPlannedVariantsLimit?: boolean;
+  } = {},
 ) {
   const creationMode = payload.creationMode ?? "standard";
   const generationSemantics = creationMode === "prompt" ? "joint" : normalizeGenerationSemantics(payload.generationSemantics);
@@ -137,27 +233,12 @@ export function validateCreatePayload(
     throw new GenerationRequestError(LEGACY_HALF_K_REJECTION_MESSAGE);
   }
 
-  if (
-    (creationMode === "standard" && !payload.productName?.trim()) ||
-    selectedTypes.length === 0 ||
-    selectedRatios.length === 0 ||
-    selectedResolutions.length === 0
-  ) {
+  if ((isMarketingStrategyMode(creationMode) && !payload.productName?.trim()) || selectedRatios.length === 0 || selectedResolutions.length === 0) {
     throw new GenerationRequestError("Please complete the required fields.");
   }
 
-  if (
-    creationMode === "suite" &&
-    (
-      !payload.category?.trim() ||
-      !payload.sellingPoints?.trim() ||
-      !payload.materialInfo?.trim() ||
-      !payload.sizeInfo?.trim()
-    )
-  ) {
-    throw new GenerationRequestError(
-      "Image set mode requires category name, selling points, material, and size details.",
-    );
+  if (!isMarketingStrategyMode(creationMode) && creationMode !== "prompt" && selectedTypes.length === 0) {
+    throw new GenerationRequestError("Please complete the required fields.");
   }
 
   if (creationMode === "suite" && input.sourceFileCount !== 1) {
@@ -221,19 +302,21 @@ export function validateCreatePayload(
   }
 
   const effectiveVariantsPerType = creationMode === "prompt" ? 1 : payload.variantsPerType;
+  const effectiveRatioCount = isMarketingStrategyMode(creationMode) ? 1 : selectedRatios.length;
+  const effectiveResolutionCount = isMarketingStrategyMode(creationMode) ? 1 : selectedResolutions.length;
   const basePlannedVariants = getPlannedRequestCount({
     creationMode,
     generationSemantics,
     sourceImageCount: input.sourceFileCount,
     typeCount: selectedTypes.length,
-    ratioCount: selectedRatios.length,
-    resolutionCount: selectedResolutions.length,
+    ratioCount: effectiveRatioCount,
+    resolutionCount: effectiveResolutionCount,
     variantsPerType: effectiveVariantsPerType,
   });
   const totalVariants =
     creationMode === "prompt" ? basePlannedVariants * Math.max(promptInputs.length, 1) : basePlannedVariants;
 
-  if (totalVariants > 96) {
+  if (!options.skipPlannedVariantsLimit && totalVariants > 96) {
     throw new GenerationRequestError("This batch is too large. Keep it under 96 generated variants per job.");
   }
 }

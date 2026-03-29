@@ -294,14 +294,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
         <section className="panel settings-section settings-card is-info">
           <div className="settings-section-header">
             <h3>{text.sections.gemini}</h3>
-            <aside className="settings-guide-card is-info">
-              <strong>{text.guides.title}</strong>
-              <ul>
-                {text.guides.gemini.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </aside>
           </div>
           <div className="settings-fields-grid">
             <label className="settings-field-span-2">
@@ -319,7 +311,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
                 value={formState.defaultApiBaseUrl}
                 onChange={(event) => patchSettings({ defaultApiBaseUrl: event.target.value })}
               />
-              <small className="helper">{text.hints.baseUrl}</small>
             </label>
             <label>
               <span>{text.labels.defaultApiVersion}</span>
@@ -327,7 +318,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
                 value={formState.defaultApiVersion}
                 onChange={(event) => patchSettings({ defaultApiVersion: event.target.value })}
               />
-              <small className="helper">{text.hints.version}</small>
             </label>
             <label>
               <span>{text.labels.defaultTextModel}</span>
@@ -351,7 +341,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
                 value={formState.defaultApiHeaders}
                 onChange={(event) => patchSettings({ defaultApiHeaders: event.target.value })}
               />
-              <small className="helper">{text.hints.headers}</small>
             </label>
           </div>
           <div className="settings-card-footer">
@@ -365,14 +354,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
         <section className="panel settings-section settings-card settings-card-compact is-accent">
           <div className="settings-section-header">
             <h3>{text.sections.storage}</h3>
-            <aside className="settings-guide-card is-accent">
-              <strong>{text.guides.title}</strong>
-              <ul>
-                {text.guides.storage.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </aside>
           </div>
           <div className="settings-fields-grid">
             <label className="settings-field-span-2">
@@ -381,7 +362,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
                 value={formState.storageDir}
                 onChange={(event) => patchSettings({ storageDir: event.target.value })}
               />
-              <small className="helper">{text.hints.storageDir}</small>
             </label>
             <label>
               <span>{text.labels.maxConcurrency}</span>
@@ -392,7 +372,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
                 value={formState.maxConcurrency}
                 onChange={(event) => patchSettings({ maxConcurrency: Number(event.target.value) || 1 })}
               />
-              <small className="helper">{text.hints.maxConcurrency}</small>
             </label>
           </div>
         </section>
@@ -400,14 +379,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
         <section className="panel settings-section settings-card settings-card-wide is-danger">
           <div className="settings-section-header">
             <h3>{text.sections.feishu}</h3>
-            <aside className="settings-guide-card is-danger">
-              <strong>{text.guides.title}</strong>
-              <ul>
-                {text.guides.feishu.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </aside>
           </div>
           <label className="settings-checkbox-row">
             <input
@@ -417,7 +388,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
             />
             <span>{text.labels.feishuSyncEnabled}</span>
           </label>
-          <small className="helper">{text.hints.feishuEnable}</small>
           <div className="settings-fields-grid">
             <label>
               <span>{text.labels.feishuAppId}</span>
@@ -444,7 +414,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
                 value={formState.feishuBitableTableId}
                 onChange={(event) => patchSettings({ feishuBitableTableId: event.target.value })}
               />
-              <small className="helper">{text.hints.feishuToken}</small>
             </label>
             <label className="settings-field-span-2">
               <span>{text.labels.feishuUploadParentType}</span>
@@ -452,7 +421,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
                 value={formState.feishuUploadParentType}
                 onChange={(event) => patchSettings({ feishuUploadParentType: event.target.value })}
               />
-              <small className="helper">{text.hints.feishuParentType}</small>
             </label>
             <label className="settings-field-span-2">
               <div className="settings-field-toolbar">
@@ -475,8 +443,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
                 value={formState.feishuFieldMappingJson}
                 onChange={(event) => patchSettings({ feishuFieldMappingJson: event.target.value })}
               />
-              <small className="helper">{text.hints.feishuMapping}</small>
-              <small className="helper">{text.hints.feishuSupportedFields}</small>
             </label>
           </div>
           <div className="settings-card-footer">
@@ -491,7 +457,6 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
       <section className="panel settings-submit-panel is-accent">
         <div>
           <strong>{text.actions.save}</strong>
-          <p className="helper">{text.hints.saveSummary}</p>
           {message ? <p className="helper success-text settings-feedback is-success">{message}</p> : null}
         </div>
         <button className="primary-button" disabled={isPending} type="submit">

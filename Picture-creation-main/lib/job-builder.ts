@@ -7,6 +7,8 @@ import type {
   GenerationSemantics,
   JobDetails,
   JobItemRecord,
+  MarketingImageStrategy,
+  MarketingStrategy,
   ProviderOverride,
   ReferenceCompositionLock,
   ReferenceBackgroundMode,
@@ -15,6 +17,7 @@ import type {
   ReferenceRemakeGoal,
   ReferencePosterCopy,
   ReferenceTextRegionPolicy,
+  StrategyWorkflowMode,
   UiLanguage,
 } from "@/lib/types";
 import { buildCompositeSourceDescription } from "@/lib/creative-fields";
@@ -99,9 +102,26 @@ function normalizePromptInputs(payload: {
   return fallback ? [fallback] : [];
 }
 
+function normalizeStructuredSelectedTypes(payload: {
+  selectedTypes: string[];
+  sizeInfo?: string;
+}) {
+  const normalized = Array.isArray(payload.selectedTypes)
+    ? payload.selectedTypes.map((value) => value.trim()).filter(Boolean)
+    : [];
+
+  const filtered = normalized.filter((type) => payload.sizeInfo?.trim() || type !== "size-spec");
+  if (payload.sizeInfo?.trim() && !filtered.includes("size-spec")) {
+    filtered.push("size-spec");
+  }
+
+  return filtered;
+}
+
 export interface CreatePayload {
   creationMode?: "standard" | "reference-remix" | "prompt" | "suite" | "amazon-a-plus";
   generationSemantics?: GenerationSemantics;
+  strategyWorkflowMode?: StrategyWorkflowMode;
   referenceRemakeGoal?: ReferenceRemakeGoal;
   referenceStrength?: "reference" | "balanced" | "product";
   referenceCompositionLock?: ReferenceCompositionLock;
@@ -135,9 +155,67 @@ export interface CreatePayload {
   includeCopyLayout: boolean;
   uiLanguage: UiLanguage;
   selectedTemplateOverrides?: Record<string, string>;
+  marketingStrategy?: MarketingStrategy | null;
+  imageStrategies?: MarketingImageStrategy[] | null;
   referenceLayoutOverride?: ReferenceLayoutAnalysis | null;
   referencePosterCopyOverride?: ReferencePosterCopy | null;
   temporaryProvider?: ProviderOverride;
+}
+
+function isMarketingStrategyMode(creationMode: CreatePayload["creationMode"]) {
+  return creationMode === "standard" || creationMode === "suite" || creationMode === "amazon-a-plus";
+}
+
+function normalizeImageStrategies(payload: {
+  imageStrategies?: MarketingImageStrategy[] | null;
+  selectedRatios?: string[];
+}): MarketingImageStrategy[] {
+  return (payload.imageStrategies ?? [])
+    .filter((strategy): strategy is MarketingImageStrategy => Boolean(strategy && typeof strategy === "object"))
+    .map((strategy, index) => ({
+      ...strategy,
+      id: strategy.id?.trim() || createId(`strategy-${index + 1}`),
+      imageType: strategy.imageType?.trim() || `strategy-${index + 1}`,
+      title: strategy.title?.trim() || strategy.imageType?.trim() || `Strategy ${index + 1}`,
+      marketingRole: strategy.marketingRole?.trim() || strategy.title?.trim() || `Role ${index + 1}`,
+      primarySellingPoint: strategy.primarySellingPoint?.trim() || "",
+      sceneType: strategy.sceneType?.trim() || "",
+      compositionGuidance: strategy.compositionGuidance?.trim() || "",
+      copySpaceGuidance: strategy.copySpaceGuidance?.trim() || "",
+      moodLighting: strategy.moodLighting?.trim() || "",
+      outputRatio: strategy.outputRatio?.trim() || payload.selectedRatios?.[0] || "1:1",
+      whyNeeded: strategy.whyNeeded?.trim() || "",
+      strategyEdited: Boolean(strategy.strategyEdited),
+    }))
+    .filter((strategy) => Boolean(strategy.title.trim()));
+}
+
+function dedupeImageStrategies(strategies: Array<MarketingImageStrategy | null | undefined>): MarketingImageStrategy[] {
+  const seen = new Set<string>();
+  const deduped: MarketingImageStrategy[] = [];
+
+  for (const strategy of strategies) {
+    if (!strategy) {
+      continue;
+    }
+
+    const key =
+      strategy.id?.trim() ||
+      [
+        strategy.imageType?.trim() || "",
+        strategy.title?.trim() || "",
+        strategy.outputRatio?.trim() || "",
+      ].join("::");
+
+    if (!key || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(strategy);
+  }
+
+  return deduped;
 }
 
 export function buildJobItems(sourceAssets: AssetRecord[], payload: CreatePayload, jobId: string): JobItemRecord[] {
@@ -145,6 +223,9 @@ export function buildJobItems(sourceAssets: AssetRecord[], payload: CreatePayloa
   const now = nowIso();
   const generationSemantics = normalizeGenerationSemantics(payload.generationSemantics);
   const promptInputs = payload.creationMode === "prompt" ? normalizePromptInputs(payload) : [];
+  const structuredSelectedTypes = isMarketingStrategyMode(payload.creationMode)
+    ? normalizeStructuredSelectedTypes(payload)
+    : [];
   const sourceAssetEntries =
     payload.creationMode === "prompt"
       ? sourceAssets.length > 0
@@ -168,6 +249,63 @@ export function buildJobItems(sourceAssets: AssetRecord[], payload: CreatePayloa
             originalName: asset.originalName,
           }))
       : [];
+  if (isMarketingStrategyMode(payload.creationMode)) {
+    const strategySourceEntries = sourceAssets.length > 0
+      ? generationSemantics === "joint"
+        ? [
+            {
+              id: sourceAssets[0]!.id,
+              originalName: sourceAssets[0]!.originalName,
+            },
+          ]
+        : sourceAssets.map((asset) => ({
+            id: asset.id,
+            originalName: asset.originalName,
+          }))
+      : [{ id: "", originalName: "strategy-only" }];
+    const ratio = payload.selectedRatios[0] || "1:1";
+    const resolutionLabel = payload.selectedResolutions[0] || "4K";
+
+    for (const sourceAsset of strategySourceEntries) {
+      for (const imageType of structuredSelectedTypes) {
+        for (let variantIndex = 1; variantIndex <= payload.variantsPerType; variantIndex += 1) {
+          const { width, height } = dimensionsForVariant(ratio, resolutionLabel);
+          items.push({
+            id: createId("item"),
+            jobId,
+            sourceAssetId: sourceAsset.id,
+            sourceAssetName: sourceAsset.originalName,
+            imageType: imageType as JobItemRecord["imageType"],
+            ratio,
+            resolutionLabel,
+            width,
+            height,
+            variantIndex,
+            promptInputIndex: 0,
+            imageStrategy: null,
+            strategyEdited: false,
+            visualAudit: null,
+            generationAttempt: 0,
+            autoRetriedFromAudit: false,
+            status: "queued",
+            promptText: null,
+            negativePrompt: null,
+            copyJson: null,
+            generatedAssetId: null,
+            layoutAssetId: null,
+            reviewStatus: "unreviewed",
+            createdAt: now,
+            updatedAt: now,
+            errorMessage: null,
+            warningMessage: null,
+            providerDebug: null,
+          });
+        }
+      }
+    }
+
+    return items;
+  }
   const promptInputIndices = payload.creationMode === "prompt" ? promptInputs.map((_, index) => index) : [0];
   const variantCount = payload.creationMode === "prompt" ? 1 : payload.variantsPerType;
 
@@ -190,6 +328,11 @@ export function buildJobItems(sourceAssets: AssetRecord[], payload: CreatePayloa
                 height,
                 variantIndex,
                 promptInputIndex,
+                imageStrategy: null,
+                strategyEdited: false,
+                visualAudit: null,
+                generationAttempt: 0,
+                autoRetriedFromAudit: false,
                 status: "queued",
                 promptText: null,
                 negativePrompt: null,
@@ -231,6 +374,7 @@ export function buildCreateJobInput(
     id: jobId,
     creationMode: normalizedPayload.creationMode ?? "standard",
     generationSemantics: normalizeGenerationSemantics(normalizedPayload.generationSemantics),
+    strategyWorkflowMode: normalizedPayload.strategyWorkflowMode ?? "quick",
     referenceRemakeGoal: normalizedPayload.referenceRemakeGoal ?? "hard-remake",
     referenceStrength: normalizedPayload.referenceStrength ?? "balanced",
     referenceCompositionLock: normalizedPayload.referenceCompositionLock ?? "balanced",
@@ -254,7 +398,9 @@ export function buildCreateJobInput(
     platform: normalizedPayload.platform,
     referenceExtraPrompt: normalizedPayload.referenceExtraPrompt ?? "",
     referenceNegativePrompt: normalizedPayload.referenceNegativePrompt ?? "",
-    selectedTypes: normalizedPayload.selectedTypes,
+    selectedTypes: isMarketingStrategyMode(normalizedPayload.creationMode)
+      ? normalizeStructuredSelectedTypes(normalizedPayload)
+      : normalizedPayload.selectedTypes,
     selectedRatios: normalizedPayload.selectedRatios,
     selectedResolutions: normalizedPayload.selectedResolutions,
     variantsPerType: normalizedPayload.creationMode === "prompt" ? 1 : normalizedPayload.variantsPerType,
@@ -267,6 +413,7 @@ export function buildCreateJobInput(
     }),
     uiLanguage: normalizedPayload.uiLanguage,
     selectedTemplateOverrides: normalizedPayload.selectedTemplateOverrides ?? {},
+    marketingStrategy: normalizedPayload.marketingStrategy ?? null,
     referenceLayoutOverride: normalizedPayload.referenceLayoutOverride ?? null,
     referencePosterCopyOverride: normalizedPayload.referencePosterCopyOverride ?? null,
     sourceAssets: sourceAssets.map((asset) => ({ ...asset, jobId })),
@@ -297,6 +444,7 @@ export function buildRetryJobInput(details: JobDetails): CreateJobInput {
     {
       creationMode: details.job.creationMode,
       generationSemantics: details.job.generationSemantics,
+      strategyWorkflowMode: details.job.strategyWorkflowMode,
       referenceRemakeGoal: details.job.referenceRemakeGoal,
       referenceStrength: details.job.referenceStrength,
       referenceCompositionLock: details.job.referenceCompositionLock,
@@ -328,6 +476,8 @@ export function buildRetryJobInput(details: JobDetails): CreateJobInput {
       includeCopyLayout: false,
       uiLanguage: details.job.uiLanguage,
       selectedTemplateOverrides: details.job.selectedTemplateOverrides,
+      marketingStrategy: details.job.marketingStrategy,
+      imageStrategies: dedupeImageStrategies(details.items.map((item) => item.imageStrategy)),
       referenceLayoutOverride: details.job.referenceLayoutOverride,
       referencePosterCopyOverride: details.job.referencePosterCopyOverride,
     },

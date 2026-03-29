@@ -96,11 +96,6 @@ export default async function HistoryPage({
                   {language === "zh" ? "上一页" : "Previous"}
                 </Link>
               ) : null}
-              <p className="helper history-pagination-summary">
-                {language === "zh"
-                  ? `显示 ${rangeStart}-${rangeEnd} / 共 ${summary.totalJobs} 条`
-                  : `Showing ${rangeStart}-${rangeEnd} of ${summary.totalJobs}`}
-              </p>
               {totalPages > 1 ? (
                 <Link
                   aria-disabled={currentPage >= totalPages}

@@ -44,6 +44,7 @@ export async function createGenerationJobFromFormData(formData: FormData) {
   const settings = getSettings();
   const sourceFiles = getFiles(formData, "files");
   const referenceFiles = getFiles(formData, "referenceFiles");
+  const providerOverride = sanitizeTemporaryProvider(payload.temporaryProvider);
 
   validateCreatePayload(payload, {
     imageModel: settings.defaultImageModel,
@@ -66,7 +67,7 @@ export async function createGenerationJobFromFormData(formData: FormData) {
   const createInput = buildCreateJobInput(sourceAssets, payload, jobId, referenceAssets);
   const job = createAndEnqueueJob({
     createInput,
-    providerOverride: sanitizeTemporaryProvider(payload.temporaryProvider),
+    providerOverride,
   });
 
   return { jobId: job.id };

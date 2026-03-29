@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 
 import type { UiLanguage } from "@/lib/types";
 
+import { CreateAgentPanel } from "@/components/create-agent-panel";
 import { LanguageToggle } from "@/components/language-toggle";
 
 type IntegrationState = "ready" | "partial" | "inactive";
@@ -49,11 +50,13 @@ export function Navigation({
 }) {
   const pathname = usePathname();
   const normalizedPathname = pathname?.startsWith("/jobs/") ? "/history" : pathname;
+  const isCreatePage = normalizedPathname === "/create";
   const links = [
     { href: "/", label: language === "zh" ? "总览" : "Overview" },
     { href: "/create", label: language === "zh" ? "创作台" : "Studio" },
     { href: "/history", label: language === "zh" ? "历史记录" : "History" },
     { href: "/settings", label: language === "zh" ? "设置" : "Settings" },
+    { href: "/brands", label: language === "zh" ? "品牌库" : "Brand Library" },
   ];
 
   const summaryChips =
@@ -93,21 +96,29 @@ export function Navigation({
         </div>
       </section>
 
-      <div className="app-header-nav-shell">
-        <nav
-          aria-label={language === "zh" ? "主导航" : "Primary navigation"}
-          className="app-nav"
-        >
-          {links.map((link) => (
-            <Link
-              key={link.href}
-              className={normalizedPathname === link.href ? "is-active" : undefined}
-              href={link.href}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
+      <div className="app-header-center-cluster">
+        {isCreatePage ? (
+          <div className="app-header-agent-slot">
+            <CreateAgentPanel />
+          </div>
+        ) : null}
+
+        <div className="app-header-nav-shell">
+          <nav
+            aria-label={language === "zh" ? "主导航" : "Primary navigation"}
+            className="app-nav"
+          >
+            {links.map((link) => (
+              <Link
+                key={link.href}
+                className={normalizedPathname === link.href ? "is-active" : undefined}
+                href={link.href}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
       </div>
 
       <div className="app-header-control-cluster">

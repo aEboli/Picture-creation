@@ -16,7 +16,10 @@ import type {
   JobRecord,
   JobStatus,
   LocalizedCreativeInputs,
+  MarketingImageStrategy,
+  MarketingStrategy,
   ProviderDebugInfo,
+  VisualAudit,
   ReferenceLayoutAnalysis,
   ReferencePosterCopy,
   TemplateFilters,
@@ -63,6 +66,7 @@ function rowToJob(row: any): JobRecord {
     status: row.status,
     creationMode: row.creation_mode ?? "standard",
     generationSemantics: row.generation_semantics ?? "batch",
+    strategyWorkflowMode: row.strategy_workflow_mode ?? "quick",
     referenceRemakeGoal: row.reference_remake_goal ?? "hard-remake",
     referenceStrength: row.reference_strength ?? "balanced",
     referenceCompositionLock: row.reference_composition_lock ?? "balanced",
@@ -102,6 +106,7 @@ function rowToJob(row: any): JobRecord {
     sourceDescription: row.source_description,
     uiLanguage: row.ui_language,
     selectedTemplateOverrides: fromJson(row.selected_template_overrides, {}),
+    marketingStrategy: fromJson<MarketingStrategy | null>(row.marketing_strategy_json, null),
     localizedInputs: fromJson<LocalizedCreativeInputs | null>(row.localized_inputs_json, null),
     referenceLayoutOverride: fromJson<ReferenceLayoutAnalysis | null>(row.reference_layout_override_json, null),
     referencePosterCopyOverride: fromJson<ReferencePosterCopy | null>(row.reference_poster_copy_override_json, null),
@@ -146,6 +151,11 @@ function rowToItem(row: any): JobItemRecord {
     height: row.height,
     variantIndex: row.variant_index,
     promptInputIndex: row.prompt_input_index ?? 0,
+    imageStrategy: fromJson<MarketingImageStrategy | null>(row.image_strategy_json, null),
+    strategyEdited: Boolean(row.strategy_edited ?? 0),
+    visualAudit: fromJson<VisualAudit | null>(row.visual_audit_json, null),
+    generationAttempt: Number(row.generation_attempt ?? 0),
+    autoRetriedFromAudit: Boolean(row.auto_retried_from_audit ?? 0),
     status: row.status,
     promptText: row.prompt_text,
     negativePrompt: row.negative_prompt,
@@ -422,6 +432,10 @@ function ensureSettingsColumns(database: DatabaseSync) {
       name: "templates_retired",
       statement: "ALTER TABLE settings ADD COLUMN templates_retired INTEGER NOT NULL DEFAULT 0",
     },
+    {
+      name: "agent_settings_json",
+      statement: "ALTER TABLE settings ADD COLUMN agent_settings_json TEXT NOT NULL DEFAULT '{}'",
+    },
   ];
 
   for (const column of columnDefinitions) {
@@ -440,6 +454,26 @@ function ensureJobItemColumns(database: DatabaseSync) {
     {
       name: "prompt_input_index",
       statement: "ALTER TABLE job_items ADD COLUMN prompt_input_index INTEGER NOT NULL DEFAULT 0",
+    },
+    {
+      name: "image_strategy_json",
+      statement: "ALTER TABLE job_items ADD COLUMN image_strategy_json TEXT",
+    },
+    {
+      name: "strategy_edited",
+      statement: "ALTER TABLE job_items ADD COLUMN strategy_edited INTEGER NOT NULL DEFAULT 0",
+    },
+    {
+      name: "visual_audit_json",
+      statement: "ALTER TABLE job_items ADD COLUMN visual_audit_json TEXT",
+    },
+    {
+      name: "generation_attempt",
+      statement: "ALTER TABLE job_items ADD COLUMN generation_attempt INTEGER NOT NULL DEFAULT 0",
+    },
+    {
+      name: "auto_retried_from_audit",
+      statement: "ALTER TABLE job_items ADD COLUMN auto_retried_from_audit INTEGER NOT NULL DEFAULT 0",
     },
     {
       name: "review_status",
@@ -505,6 +539,10 @@ function ensureJobColumns(database: DatabaseSync) {
       statement: "ALTER TABLE jobs ADD COLUMN reference_copy_mode TEXT NOT NULL DEFAULT 'reference'",
     },
     {
+      name: "strategy_workflow_mode",
+      statement: "ALTER TABLE jobs ADD COLUMN strategy_workflow_mode TEXT NOT NULL DEFAULT 'quick'",
+    },
+    {
       name: "custom_prompt",
       statement: "ALTER TABLE jobs ADD COLUMN custom_prompt TEXT NOT NULL DEFAULT ''",
     },
@@ -535,6 +573,10 @@ function ensureJobColumns(database: DatabaseSync) {
     {
       name: "selected_template_overrides",
       statement: "ALTER TABLE jobs ADD COLUMN selected_template_overrides TEXT NOT NULL DEFAULT '{}'",
+    },
+    {
+      name: "marketing_strategy_json",
+      statement: "ALTER TABLE jobs ADD COLUMN marketing_strategy_json TEXT",
     },
     {
       name: "localized_inputs_json",
@@ -595,6 +637,7 @@ function ensureSchema(database: DatabaseSync) {
       feishu_bitable_table_id TEXT NOT NULL DEFAULT '',
       feishu_upload_parent_type TEXT NOT NULL DEFAULT 'bitable_image',
       feishu_field_mapping_json TEXT NOT NULL DEFAULT '{}',
+      agent_settings_json TEXT NOT NULL DEFAULT '{}',
       templates_retired INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -605,6 +648,7 @@ function ensureSchema(database: DatabaseSync) {
       status TEXT NOT NULL,
       creation_mode TEXT NOT NULL DEFAULT 'standard',
       generation_semantics TEXT NOT NULL DEFAULT 'batch',
+      strategy_workflow_mode TEXT NOT NULL DEFAULT 'quick',
       reference_remake_goal TEXT NOT NULL DEFAULT 'hard-remake',
       reference_strength TEXT NOT NULL DEFAULT 'balanced',
       reference_composition_lock TEXT NOT NULL DEFAULT 'balanced',
@@ -641,6 +685,7 @@ function ensureSchema(database: DatabaseSync) {
       source_description TEXT NOT NULL,
       ui_language TEXT NOT NULL,
       selected_template_overrides TEXT NOT NULL DEFAULT '{}',
+      marketing_strategy_json TEXT,
       localized_inputs_json TEXT,
       reference_layout_override_json TEXT,
       reference_poster_copy_override_json TEXT,
@@ -662,6 +707,11 @@ function ensureSchema(database: DatabaseSync) {
       height INTEGER NOT NULL,
       variant_index INTEGER NOT NULL,
       prompt_input_index INTEGER NOT NULL DEFAULT 0,
+      image_strategy_json TEXT,
+      strategy_edited INTEGER NOT NULL DEFAULT 0,
+      visual_audit_json TEXT,
+      generation_attempt INTEGER NOT NULL DEFAULT 0,
+      auto_retried_from_audit INTEGER NOT NULL DEFAULT 0,
       status TEXT NOT NULL,
       prompt_text TEXT,
       negative_prompt TEXT,
@@ -737,9 +787,9 @@ function ensureSchema(database: DatabaseSync) {
       .prepare(
         `INSERT INTO settings (
           id, default_api_key, default_text_model, default_image_model, default_api_base_url, default_api_version, default_api_headers, storage_dir, max_concurrency, default_ui_language,
-          feishu_sync_enabled, feishu_app_id, feishu_app_secret, feishu_bitable_app_token, feishu_bitable_table_id, feishu_upload_parent_type, feishu_field_mapping_json, templates_retired,
+          feishu_sync_enabled, feishu_app_id, feishu_app_secret, feishu_bitable_app_token, feishu_bitable_table_id, feishu_upload_parent_type, feishu_field_mapping_json, agent_settings_json, templates_retired,
           created_at, updated_at
-        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         DEFAULT_SETTINGS.defaultApiKey,
@@ -758,6 +808,7 @@ function ensureSchema(database: DatabaseSync) {
         DEFAULT_SETTINGS.feishuBitableTableId,
         DEFAULT_SETTINGS.feishuUploadParentType,
         DEFAULT_SETTINGS.feishuFieldMappingJson,
+        DEFAULT_SETTINGS.agentSettingsJson,
         0,
         now,
         now,
@@ -837,6 +888,7 @@ export function getSettings(): AppSettings {
     feishuBitableTableId: row.feishu_bitable_table_id ?? "",
     feishuUploadParentType: row.feishu_upload_parent_type ?? "bitable_image",
     feishuFieldMappingJson: row.feishu_field_mapping_json ?? "{}",
+    agentSettingsJson: row.agent_settings_json ?? "{}",
   };
 }
 
@@ -860,6 +912,7 @@ export function updateSettings(input: Partial<AppSettings>): AppSettings {
     feishuBitableTableId: input.feishuBitableTableId ?? settings.feishuBitableTableId,
     feishuUploadParentType: input.feishuUploadParentType ?? settings.feishuUploadParentType,
     feishuFieldMappingJson: input.feishuFieldMappingJson ?? settings.feishuFieldMappingJson,
+    agentSettingsJson: input.agentSettingsJson ?? settings.agentSettingsJson,
   };
 
   database
@@ -881,6 +934,7 @@ export function updateSettings(input: Partial<AppSettings>): AppSettings {
         feishu_bitable_table_id = ?,
         feishu_upload_parent_type = ?,
         feishu_field_mapping_json = ?,
+        agent_settings_json = ?,
         updated_at = ?
       WHERE id = 1`
     )
@@ -901,6 +955,7 @@ export function updateSettings(input: Partial<AppSettings>): AppSettings {
       nextSettings.feishuBitableTableId,
       nextSettings.feishuUploadParentType,
       nextSettings.feishuFieldMappingJson,
+      nextSettings.agentSettingsJson,
       nowIso(),
     );
 
@@ -1143,19 +1198,20 @@ export function createJob(input: CreateJobInput): JobRecord {
     database
       .prepare(
         `INSERT INTO jobs (
-          id, status, creation_mode, generation_semantics, reference_remake_goal, reference_strength, reference_composition_lock, reference_text_region_policy, reference_background_mode, preserve_reference_text, reference_copy_mode, product_name, sku, category, brand_name, selling_points, restrictions, custom_prompt, prompt_inputs_json, custom_negative_prompt, translate_prompt_to_output_language, auto_optimize_prompt, reference_extra_prompt, reference_negative_prompt, country, language, platform,
+          id, status, creation_mode, generation_semantics, strategy_workflow_mode, reference_remake_goal, reference_strength, reference_composition_lock, reference_text_region_policy, reference_background_mode, preserve_reference_text, reference_copy_mode, product_name, sku, category, brand_name, selling_points, restrictions, custom_prompt, prompt_inputs_json, custom_negative_prompt, translate_prompt_to_output_language, auto_optimize_prompt, reference_extra_prompt, reference_negative_prompt, country, language, platform,
           selected_types, selected_ratios, selected_resolutions, variants_per_type, include_copy_layout,
-          batch_file_count, created_at, updated_at, source_description, ui_language, selected_template_overrides,
+          batch_file_count, created_at, updated_at, source_description, ui_language, selected_template_overrides, marketing_strategy_json,
           reference_layout_override_json, reference_poster_copy_override_json
         ) VALUES (
-          ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )`
       )
       .run(
         input.id,
         input.creationMode,
         input.generationSemantics,
+        input.strategyWorkflowMode,
         input.referenceRemakeGoal,
         input.referenceStrength,
         input.referenceCompositionLock,
@@ -1190,6 +1246,7 @@ export function createJob(input: CreateJobInput): JobRecord {
         input.sourceDescription,
         input.uiLanguage,
         toJson(input.selectedTemplateOverrides),
+        toJson(input.marketingStrategy),
         toJson(input.referenceLayoutOverride),
         toJson(input.referencePosterCopyOverride),
       );
@@ -1220,8 +1277,8 @@ export function createJob(input: CreateJobInput): JobRecord {
     const insertItem = database.prepare(
       `INSERT INTO job_items (
         id, job_id, source_asset_id, source_asset_name, image_type, ratio, resolution_label, width, height, variant_index, prompt_input_index,
-        status, prompt_text, negative_prompt, copy_json, generated_asset_id, layout_asset_id, review_status, warning_message, provider_debug_json, created_at, updated_at, error_message
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        image_strategy_json, strategy_edited, visual_audit_json, generation_attempt, auto_retried_from_audit, status, prompt_text, negative_prompt, copy_json, generated_asset_id, layout_asset_id, review_status, warning_message, provider_debug_json, created_at, updated_at, error_message
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     );
 
     for (const item of input.items) {
@@ -1237,6 +1294,11 @@ export function createJob(input: CreateJobInput): JobRecord {
         item.height,
         item.variantIndex,
         item.promptInputIndex,
+        toJson(item.imageStrategy),
+        item.strategyEdited ? 1 : 0,
+        toJson(item.visualAudit),
+        item.generationAttempt,
+        item.autoRetriedFromAudit ? 1 : 0,
         item.status,
         item.promptText,
         item.negativePrompt,
@@ -1477,6 +1539,9 @@ export function updateJobItemResult(input: {
   layoutAssetId?: string | null;
   warningMessage?: string | null;
   providerDebug?: ProviderDebugInfo | null;
+  visualAudit?: VisualAudit | null;
+  generationAttempt?: number;
+  autoRetriedFromAudit?: boolean;
 }) {
   const database = getDb();
   database
@@ -1490,6 +1555,9 @@ export function updateJobItemResult(input: {
         layout_asset_id = ?,
         warning_message = ?,
         provider_debug_json = ?,
+        visual_audit_json = ?,
+        generation_attempt = ?,
+        auto_retried_from_audit = ?,
         error_message = NULL,
         updated_at = ?
       WHERE id = ?`
@@ -1502,6 +1570,9 @@ export function updateJobItemResult(input: {
       input.layoutAssetId ?? null,
       input.warningMessage ?? null,
       toJson(input.providerDebug ?? null),
+      toJson(input.visualAudit ?? null),
+      input.generationAttempt ?? 0,
+      input.autoRetriedFromAudit ? 1 : 0,
       nowIso(),
       input.itemId,
     );
@@ -1518,13 +1589,26 @@ export function updateJobItemFailure(
   promptText?: string | null,
   negativePrompt?: string | null,
   providerDebug?: ProviderDebugInfo | null,
+  visualAudit?: VisualAudit | null,
+  generationAttempt?: number,
+  autoRetriedFromAudit?: boolean,
 ) {
   const database = getDb();
   database
     .prepare(
-      "UPDATE job_items SET status = 'failed', prompt_text = COALESCE(?, prompt_text), negative_prompt = COALESCE(?, negative_prompt), provider_debug_json = ?, error_message = ?, updated_at = ? WHERE id = ?",
+      "UPDATE job_items SET status = 'failed', prompt_text = COALESCE(?, prompt_text), negative_prompt = COALESCE(?, negative_prompt), provider_debug_json = ?, visual_audit_json = ?, generation_attempt = ?, auto_retried_from_audit = ?, error_message = ?, updated_at = ? WHERE id = ?",
     )
-    .run(promptText ?? null, negativePrompt ?? null, toJson(providerDebug ?? null), errorMessage, nowIso(), itemId);
+    .run(
+      promptText ?? null,
+      negativePrompt ?? null,
+      toJson(providerDebug ?? null),
+      toJson(visualAudit ?? null),
+      generationAttempt ?? 0,
+      autoRetriedFromAudit ? 1 : 0,
+      errorMessage,
+      nowIso(),
+      itemId,
+    );
 }
 
 export function insertAsset(asset: AssetRecord) {

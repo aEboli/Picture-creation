@@ -101,6 +101,7 @@ export async function testFeishuConnectionFromInput(input: Partial<AppSettings> 
     feishuBitableTableId: body.feishuBitableTableId,
     feishuUploadParentType: body.feishuUploadParentType || "bitable_image",
     feishuFieldMappingJson: body.feishuFieldMappingJson || "{}",
+    agentSettingsJson: "{}",
   });
 }
 

@@ -186,7 +186,6 @@ export function BrandLibraryManager({
         <div>
           <p className="eyebrow">{text.eyebrow}</p>
           <h3>{text.title}</h3>
-          <p className="helper">{text.description}</p>
         </div>
         <button className="ghost-button" onClick={handleCreateNew} type="button">
           {text.create}
@@ -197,7 +196,6 @@ export function BrandLibraryManager({
         <div className="brand-library-list">
           <div className="split-header compact">
             <strong>{text.listTitle}</strong>
-            <small className="helper">{text.helper}</small>
           </div>
 
           {brands.length ? (

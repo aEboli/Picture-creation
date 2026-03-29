@@ -8,6 +8,7 @@ import {
   getImageGenerationTemperature,
   getModeWorkflowCopyTemperature,
   getSharedModeAnalysisTemperature,
+  parseModelJsonResponse,
   parseCopyBundleResponse,
   resolveImageGenerationPromptText,
   sanitizeWorkflowOptimizedPrompt,
@@ -51,6 +52,31 @@ test("parseCopyBundleResponse preserves valid JSON output fields", () => {
   assert.equal(parsed.posterHeadline, "Json Poster");
   assert.deepEqual(parsed.highlights, ["A", "B"]);
   assert.equal(parsed.cta, "Buy now");
+});
+
+test("parseCopyBundleResponse defaults missing string fields to empty strings", () => {
+  const parsed = parseCopyBundleResponse(JSON.stringify({ highlights: ["A"] }), "Fallback Product");
+
+  assert.equal(parsed.optimizedPrompt, "");
+  assert.equal(parsed.title, "");
+  assert.equal(parsed.subtitle, "");
+  assert.equal(parsed.posterHeadline, "");
+  assert.equal(parsed.posterSubline, "");
+  assert.deepEqual(parsed.highlights, ["A"]);
+});
+
+test("parseModelJsonResponse strips fenced json wrappers before parsing", () => {
+  const parsed = parseModelJsonResponse(`
+\`\`\`json
+{
+  "summary": "conversion-first",
+  "items": [1, 2]
+}
+\`\`\`
+`);
+
+  assert.equal(parsed.summary, "conversion-first");
+  assert.deepEqual(parsed.items, [1, 2]);
 });
 
 test("sanitizeWorkflowOptimizedPrompt removes JSON-shaped prompt leakage and keeps plain prompts", () => {
@@ -132,21 +158,21 @@ test("reference-remix workflow temperatures are reduced, including image tempera
   assert.equal(getImageGenerationTemperature("standard"), 0.7);
 });
 
-test("prompt mode always wraps raw prompt text into an image-generation instruction when source images exist", () => {
+test("prompt mode keeps the user prompt body when source images exist", () => {
   const promptText = resolveImageGenerationPromptText({
     creationMode: "prompt",
-    customPromptText: "10cmx2cm，15g，6号鱼钩，ABS安全硬材质，翻译成英文",
+    customPromptText: "translate this lure description to English",
     country: "US",
     language: "en-US",
     platform: "amazon",
     category: "general",
     brandName: "",
-    productName: "Fishing lure",
+    productName: "",
     sellingPoints: "",
     restrictions: "",
     sourceDescription: "",
-    materialInfo: "ABS",
-    sizeInfo: "10cm x 2cm, 15g",
+    materialInfo: "",
+    sizeInfo: "",
     imageType: "scene",
     ratio: "1:1",
     resolutionLabel: "4K",
@@ -164,14 +190,14 @@ test("prompt mode always wraps raw prompt text into an image-generation instruct
     sourceImageCount: 1,
   });
 
-  assert.notEqual(promptText, "10cmx2cm，15g，6号鱼钩，ABS安全硬材质，翻译成英文");
-  assert.match(promptText, /This is an image-generation request\./);
-  assert.match(promptText, /Use the uploaded source image\(s\) as the product identity reference\./);
-  assert.match(promptText, /Do not answer with a translation, rewrite, explanation, or any text-only response\./);
-  assert.match(promptText, /User creative prompt: 10cmx2cm，15g，6号鱼钩，ABS安全硬材质，翻译成英文/);
+  assert.match(promptText, /translate this lure description to English/);
+  assert.doesNotMatch(promptText, /Transform the uploaded product image into a new/i);
+  assert.doesNotMatch(promptText, /This is an image-generation request\./);
+  assert.doesNotMatch(promptText, /Use the uploaded source image\(s\) as the product identity reference\./);
+  assert.match(promptText, /Quality emphasis:|画质强化：/);
 });
 
-test("prompt mode text-to-image prompt uses no-source wording instead of source-image edit wording", () => {
+test("prompt mode text-to-image prompt also avoids wrapper wording", () => {
   const promptText = resolveImageGenerationPromptText({
     creationMode: "prompt",
     customPromptText: "premium fishing lure on white background",
@@ -180,7 +206,7 @@ test("prompt mode text-to-image prompt uses no-source wording instead of source-
     platform: "amazon",
     category: "general",
     brandName: "",
-    productName: "Fishing lure",
+    productName: "",
     sellingPoints: "",
     restrictions: "",
     sourceDescription: "",
@@ -201,14 +227,13 @@ test("prompt mode text-to-image prompt uses no-source wording instead of source-
     sourceImageCount: 0,
   });
 
-  assert.match(promptText, /Generate a new product image for a amazon listing in en-US for market US\./);
-  assert.match(promptText, /No source images are provided\./);
-  assert.match(promptText, /Do not answer with a translation, rewrite, explanation, or any text-only response\./);
-  assert.doesNotMatch(promptText, /uploaded product/i);
-  assert.doesNotMatch(promptText, /Keep the product identity, silhouette, materials, label placement, and recognizable shape consistent with the source image\./);
+  assert.match(promptText, /premium fishing lure on white background/);
+  assert.doesNotMatch(promptText, /Generate a new product image for a amazon listing/i);
+  assert.doesNotMatch(promptText, /No source images are provided\./);
+  assert.match(promptText, /Quality emphasis:|画质强化：/);
 });
 
-test("prompt mode wrapper can be forced without creationMode and uses copy optimized prompt as fallback", () => {
+test("prompt mode helper returns the raw prompt body plus quality emphasis when forced", () => {
   const promptText = resolveImageGenerationPromptText({
     wrapPromptModeText: true,
     country: "US",
@@ -216,7 +241,7 @@ test("prompt mode wrapper can be forced without creationMode and uses copy optim
     platform: "amazon",
     category: "general",
     brandName: "",
-    productName: "Fishing lure",
+    productName: "",
     sellingPoints: "",
     restrictions: "",
     sourceDescription: "",
@@ -237,7 +262,8 @@ test("prompt mode wrapper can be forced without creationMode and uses copy optim
     sourceImageCount: 1,
   });
 
-  assert.match(promptText, /This is an image-generation request\./);
-  assert.match(promptText, /User creative prompt: translate this lure description to English/);
-  assert.match(promptText, /Use the uploaded source image\(s\) as the product identity reference\./);
+  assert.match(promptText, /translate this lure description to English/);
+  assert.doesNotMatch(promptText, /This is an image-generation request\./);
+  assert.doesNotMatch(promptText, /Use the uploaded source image\(s\) as the product identity reference\./);
+  assert.match(promptText, /Quality emphasis:|画质强化：/);
 });

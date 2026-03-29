@@ -1,6 +1,8 @@
 // @ts-ignore - Node test imports this file directly and needs the explicit extension.
 import { COUNTRIES, OUTPUT_LANGUAGES, PLATFORMS, PRODUCT_CATEGORIES } from "./constants.ts";
 // @ts-ignore - Node test imports this file directly and needs the explicit extension.
+import { appendQualityEnhancements } from "./prompt-quality-enhancements.ts";
+// @ts-ignore - Node test imports this file directly and needs the explicit extension.
 import type {
   BrandRecord,
   GeneratedCopyBundle,
@@ -110,9 +112,9 @@ const imageTypeGuides: Record<ImageType, { intent: string; extraPrompt: string; 
     copyFocus: "Highlight fit, comfort, or real-life usage.",
   },
   poster: {
-    intent: "Produce a high-impact promotional poster creative.",
-    extraPrompt: "Use dramatic composition, strong hierarchy, polished lighting, and visual hooks suitable for ads.",
-    copyFocus: "Emphasize campaign energy and urgency.",
+    intent: "Produce a high-impact promotional poster creative with real advertising intent.",
+    extraPrompt: "Use dramatic composition, strong hierarchy, and commercial ad staging. Avoid turning it into a plain background swap.",
+    copyFocus: "Emphasize campaign energy with a strong hero message and short supporting copy.",
   },
   detail: {
     intent: "Zoom attention into the product’s craftsmanship and feature details.",
@@ -125,9 +127,9 @@ const imageTypeGuides: Record<ImageType, { intent: string; extraPrompt: string; 
     copyFocus: "Anchor on user frustration and the product outcome.",
   },
   "feature-overview": {
-    intent: "Build a clean feature-summary creative that introduces the product's main selling points in one frame.",
-    extraPrompt: "Use a structured overview layout with one clear hero product and concise feature callouts that are easy to scan.",
-    copyFocus: "Summarize the strongest product benefits in a compact comparison-style layout.",
+    intent: "Build a true copy-layout benefit image with one strong headline and up to two short selling-point lines.",
+    extraPrompt: "Use a structured ad layout with disciplined whitespace, a clear product hero, and readable copy zones instead of infographic clutter.",
+    copyFocus: "Turn the strongest benefits into a concise headline-led sales visual.",
   },
   "material-craft": {
     intent: "Focus on the material quality, finish, structural detail, and craftsmanship of the product.",
@@ -239,6 +241,10 @@ function formatMeasurementNumber(value: number) {
   return fixed.replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
 }
 
+function formatMeasurementNumberPrecise(value: number) {
+  return value.toFixed(2).replace(/\.0+$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+}
+
 function detectMeasurementSystems(sizeInfo: string) {
   const systems = {
     metric: false,
@@ -316,6 +322,171 @@ function buildDualMeasurementReference(sizeInfo?: string | null) {
   return converted.length ? converted.join(" · ") : null;
 }
 
+function buildSlashDualMeasurementToken(value: number, unit: string) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  if (unit === "mm") {
+    return `${formatMeasurementNumberPrecise(value)}mm/${formatMeasurementNumberPrecise(value / 25.4)}in`;
+  }
+  if (unit === "cm") {
+    return `${formatMeasurementNumberPrecise(value)}cm/${formatMeasurementNumberPrecise(value / 2.54)}in`;
+  }
+  if (unit === "m") {
+    return `${formatMeasurementNumberPrecise(value)}m/${formatMeasurementNumberPrecise(value * 3.28084)}ft`;
+  }
+  if (["inch", "inches", "in"].includes(unit)) {
+    return `${formatMeasurementNumberPrecise(value * 2.54)}cm/${formatMeasurementNumberPrecise(value)}in`;
+  }
+  if (["ft", "feet"].includes(unit)) {
+    return `${formatMeasurementNumberPrecise(value * 30.48)}cm/${formatMeasurementNumberPrecise(value)}ft`;
+  }
+  if (["kg", "kgs"].includes(unit)) {
+    return `${formatMeasurementNumberPrecise(value)}kg/${formatMeasurementNumberPrecise(value * 2.20462)}lb`;
+  }
+  if (["g", "gram", "grams"].includes(unit)) {
+    return `${formatMeasurementNumberPrecise(value)}g/${formatMeasurementNumberPrecise(value / 28.3495)}oz`;
+  }
+  if (["lb", "lbs"].includes(unit)) {
+    return `${formatMeasurementNumberPrecise(value / 2.20462)}kg/${formatMeasurementNumberPrecise(value)}lb`;
+  }
+  if (["oz", "ounce", "ounces"].includes(unit)) {
+    return `${formatMeasurementNumberPrecise(value * 28.3495)}g/${formatMeasurementNumberPrecise(value)}oz`;
+  }
+
+  return null;
+}
+
+function buildSortedSizeSpecVisualCopyLines(normalized: string, language: string) {
+  const segments = normalized
+    .split(/[，,;；\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .flatMap((part) => part.split(/[x×X*]/).map((segment) => segment.trim()).filter(Boolean));
+  const labels = language.toLowerCase().startsWith("zh")
+    ? { length: "长", width: "宽", height: "高", weight: "重量" }
+    : { length: "Length", width: "Width", height: "Height", weight: "Weight" };
+
+  const dimensions: Array<{ value: number; unit: string }> = [];
+  const weights: string[] = [];
+  let pendingDimensionValues: number[] = [];
+
+  for (const segment of segments) {
+    const match = segment.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m|inches|inch|in|ft|feet|kg|kgs|g|grams|gram|lb|lbs|oz|ounce|ounces)\b/i);
+    if (!match) {
+      const nakedNumber = segment.match(/^(\d+(?:\.\d+)?)$/);
+      if (nakedNumber) {
+        pendingDimensionValues.push(Number(nakedNumber[1]));
+      }
+      continue;
+    }
+
+    const value = Number(match[1]);
+    const unit = match[2].toLowerCase();
+    const isWeight = ["kg", "kgs", "g", "gram", "grams", "lb", "lbs", "oz", "ounce", "ounces"].includes(unit);
+    if (isWeight) {
+      const rendered = buildSlashDualMeasurementToken(value, unit);
+      if (rendered) {
+        weights.push(`${labels.weight} ${rendered}`);
+      }
+      continue;
+    }
+
+    const dimensionValues = [...pendingDimensionValues, value];
+    pendingDimensionValues = [];
+    dimensions.push(...dimensionValues.map((dimensionValue) => ({ value: dimensionValue, unit })));
+  }
+
+  const sortedDimensions = [...dimensions].sort((left, right) => right.value - left.value);
+  const lines: string[] = [];
+
+  if (sortedDimensions.length >= 1) {
+    const rendered = buildSlashDualMeasurementToken(sortedDimensions[0]!.value, sortedDimensions[0]!.unit);
+    if (rendered) {
+      lines.push(`${labels.length} ${rendered}`);
+    }
+  }
+
+  if (sortedDimensions.length >= 3) {
+    const rendered = buildSlashDualMeasurementToken(sortedDimensions[1]!.value, sortedDimensions[1]!.unit);
+    if (rendered) {
+      lines.push(`${labels.height} ${rendered}`);
+    }
+  }
+
+  if (sortedDimensions.length >= 2) {
+    const rendered = buildSlashDualMeasurementToken(sortedDimensions[sortedDimensions.length - 1]!.value, sortedDimensions[sortedDimensions.length - 1]!.unit);
+    if (rendered) {
+      lines.push(`${labels.width} ${rendered}`);
+    }
+  }
+
+  return [...lines, ...weights];
+}
+
+export function buildSizeSpecVisualCopyLines(input: {
+  sizeInfo?: string | null;
+  language: string;
+}) {
+  const normalized = normalizePromptText(input.sizeInfo);
+  if (!normalized) {
+    return [];
+  }
+
+  return buildSortedSizeSpecVisualCopyLines(normalized, input.language);
+  /*
+
+  const segments = normalized
+    .split(/[，,;；\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .flatMap((part) => part.split(/[x×X*]/).map((segment) => segment.trim()).filter(Boolean));
+  const dimensionLabels = input.language.toLowerCase().startsWith("zh")
+    ? ["长", "宽", "高"]
+    : ["Length", "Width", "Height"];
+  const weightLabel = input.language.toLowerCase().startsWith("zh") ? "重量" : "Weight";
+  let dimensionIndex = 0;
+  let pendingDimensionValues: number[] = [];
+
+  return segments.flatMap((segment) => {
+    const match = segment.match(/(\d+(?:\.\d+)?)\s*(mm|cm|m|inches|inch|in|ft|feet|kg|kgs|g|grams|gram|lb|lbs|oz|ounce|ounces)\b/i);
+    if (!match) {
+      const nakedNumber = segment.match(/^(\d+(?:\.\d+)?)$/);
+      if (nakedNumber) {
+        pendingDimensionValues.push(Number(nakedNumber[1]));
+      }
+      return [];
+    }
+
+    const value = Number(match[1]);
+    const unit = match[2].toLowerCase();
+    const isWeight = ["kg", "kgs", "g", "gram", "grams", "lb", "lbs", "oz", "ounce", "ounces"].includes(unit);
+    if (isWeight) {
+      const rendered = buildSlashDualMeasurementToken(value, unit);
+      if (!rendered) {
+        return [];
+      }
+      return [`${weightLabel} ${rendered}`];
+    }
+
+    const dimensionValues = [...pendingDimensionValues, value];
+    pendingDimensionValues = [];
+
+    return dimensionValues.flatMap((dimensionValue) => {
+      const rendered = buildSlashDualMeasurementToken(dimensionValue, unit);
+      if (!rendered) {
+        return [];
+      }
+
+      const label = dimensionLabels[Math.min(dimensionIndex, dimensionLabels.length - 1)]!;
+      dimensionIndex += 1;
+      return [`${label} ${rendered}`];
+    });
+  });
+  */
+}
+
 export function normalizeSizeInfoToDualUnits(sizeInfo?: string | null) {
   const normalized = normalizePromptText(sizeInfo);
   if (!normalized) {
@@ -373,57 +544,17 @@ export function buildPromptModePrompt(input: {
   customPrompt: string;
   hasSourceImages: boolean;
 }) {
-  const imageGuide = getImageTypeGuide(input.imageType);
-  const platformGuide = getPlatformStyle(input.platform);
-  const categoryKey = normalizePromptCategory(input.category);
-  const categoryLabel = categoryKey ? PRODUCT_CATEGORIES.find((item) => item.value === categoryKey)?.label.en ?? categoryKey : null;
-  const normalizedSizeInfo = normalizeSizeInfoToDualUnits(input.sizeInfo);
-  const allowMeasurementFocus = shouldIncludeSizeInfo(input.imageType);
+  const promptText = input.customPrompt.trim();
 
-  return [
-    input.hasSourceImages
-      ? `Transform the uploaded product image into a new ${input.platform} listing image in ${input.language} for market ${input.country}.`
-      : `Generate a new product image for a ${input.platform} listing in ${input.language} for market ${input.country}.`,
-    "This is an image-generation request.",
-    "Do not answer with a translation, rewrite, explanation, or any text-only response.",
-    input.hasSourceImages
-      ? "Use the uploaded source image(s) as the product identity reference. If multiple source images are provided, treat them as one joint reference set."
-      : "No source images are provided. Create the product scene entirely from the prompt and product facts below.",
-    input.hasSourceImages
-      ? "Keep the product identity, silhouette, materials, label placement, and recognizable shape consistent with the source image."
-      : "When no source image is provided, interpret the user creative prompt as a product-image brief rather than a text transformation request.",
-    buildSimplifiedChineseOnlyLine(input.language),
-    ...buildBrandOverrideLines(input.brandProfile),
-    `Preferred image type: ${input.imageType}. ${imageGuide.extraPrompt}`,
-    `Target aspect ratio: ${input.ratio}. Aim for ${input.resolutionLabel} level fidelity.`,
-    `Visual tone: ${platformGuide.tone}. Palette: ${platformGuide.palette}. Layout feel: ${platformGuide.layout}.`,
-    buildPromptFactLine([
-      ["Product name", input.productName],
-      ["Brand", input.brandName],
-      ["Category", categoryLabel],
-    ]),
-    buildPromptFactLine([["Selling points", input.sellingPoints]]),
-    buildPromptFactLine([["Additional notes", input.sourceDescription]]),
-    buildPromptFactLine([["Material information", input.materialInfo]]),
-    buildPromptFactLine([["Size and weight information", normalizedSizeInfo]]),
-    ...buildMeasurementPresentationLines({
-      country: input.country,
-      sizeInfo: input.sizeInfo,
-      allowMeasurementFocus,
-    }),
-    buildRestrictionsLine(input.restrictions),
-    `User creative prompt: ${input.customPrompt}`,
-    normalizedSizeInfo
-      ? allowMeasurementFocus
-        ? "If this prompt includes visible measurements, keep them in dual units and preserve shopping clarity."
-        : "Do not make size or weight the main focus here. If measurements appear anywhere, keep them in dual units."
-      : null,
-    input.hasSourceImages
-      ? "Follow the user creative prompt closely while keeping the uploaded product visually accurate and commercially clean."
-      : "Follow the user creative prompt closely and turn it into one commercially clean product-image scene.",
-  ]
-    .filter(Boolean)
-    .join("\n");
+  return appendQualityEnhancements({
+    promptText,
+    context: {
+      mode: "prompt",
+      language: input.language,
+      category: "",
+      imageType: input.imageType,
+    },
+  });
 }
 
 function strengthPrompt(referenceStrength: "reference" | "balanced" | "product") {

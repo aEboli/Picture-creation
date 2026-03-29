@@ -7,6 +7,7 @@ import { ImageLightbox, type ImageLightboxItem } from "@/components/image-lightb
 import { buildAssetUrl } from "@/lib/asset-url";
 import { ASPECT_RATIOS, IMAGE_TYPE_OPTIONS } from "@/lib/constants";
 import { splitCompositeSourceDescription } from "@/lib/creative-fields";
+import { buildGeneratedImageDownloadName, dedupeDownloadFilenames } from "@/lib/download-filenames";
 import { formatRequestedSizeDisplay } from "@/lib/image-size-policy";
 import type { JobDetails, JobItemReviewStatus, UiLanguage } from "@/lib/types";
 
@@ -103,12 +104,16 @@ function assetOriginalUrl(assetId: string) {
   return buildAssetUrl(assetId);
 }
 
-function assetDownloadUrl(assetId: string) {
-  return buildAssetUrl(assetId, { download: true });
+function assetDownloadUrl(assetId: string, filename?: string) {
+  return buildAssetUrl(assetId, { download: true, filename });
 }
 
 function approvedDownloadUrl(jobId: string) {
   return `/api/jobs/${jobId}/approved-download`;
+}
+
+function allImagesDownloadUrl(jobId: string, language: UiLanguage) {
+  return `/api/jobs/${jobId}/all-images-download?language=${encodeURIComponent(language)}`;
 }
 
 function previewZoomAriaLabel(language: UiLanguage, label: string, index: number, total: number) {
@@ -206,6 +211,7 @@ export function JobDetailsClient({
   );
   const [isFeishuSyncing, setIsFeishuSyncing] = useState(false);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const [isDownloadingAllSequential, setIsDownloadingAllSequential] = useState(false);
 
   useEffect(() => {
     if (!["queued", "processing"].includes(details.job.status)) {
@@ -290,12 +296,10 @@ export function JobDetailsClient({
             "strengthBalanced": "\u5e73\u8861",
             "strengthProduct": "更像原图场景",
             "sourceAndReference": "\u539f\u56fe / \u53c2\u8003\u56fe",
-            "mediaBoardHint": "\u5de6\u4fa7\u4fdd\u7559\u539f\u59cb\u8f93\u5165\u7d20\u6750\uff0c\u53f3\u4fa7\u4e3b\u5de5\u4f5c\u533a\u805a\u7126\u751f\u6210\u7ed3\u679c\uff0c\u51cf\u5c11\u4e0a\u4e0b\u6765\u56de\u6eda\u52a8\u3002",
             "previewWorkspace": "\u7ed3\u679c\u5de5\u4f5c\u53f0",
             "previewWorkspaceHint": "\u9009\u4e2d\u4e00\u4e2a\u751f\u6210\u9879\u540e\uff0c\u5728\u8fd9\u91cc\u805a\u7126\u67e5\u770b\u751f\u6210\u56fe\uff0c\u5e76\u5b8c\u6210\u5c3a\u5bf8\u3001Prompt \u548c\u5ba1\u6838\u64cd\u4f5c\u3002",
             "zoomHint": "\u70b9\u51fb\u56fe\u7247\u53ef\u653e\u5927\u67e5\u770b",
             "variantBrowser": "\u751f\u6210\u9879\u6d4f\u89c8",
-            "variantBrowserHint": "\u5728\u8fd9\u91cc\u5148\u5207\u6362\u8981\u805a\u7126\u67e5\u770b\u7684\u751f\u6210\u7ed3\u679c\uff0c\u4e0b\u65b9\u5de5\u4f5c\u53f0\u4f1a\u540c\u6b65\u663e\u793a\u5b8c\u6574\u5185\u5bb9\u3002",
             "noGeneratedImage": "\u6682\u65e0\u751f\u6210\u7eaf\u56fe",
             "noMedia": "\u6682\u65e0\u56fe\u7247",
             "noPreviewAvailable": "\u5f53\u524d\u751f\u6210\u9879\u8fd8\u6ca1\u6709\u53ef\u9884\u89c8\u7684\u7ed3\u679c\u3002",
@@ -315,9 +319,15 @@ export function JobDetailsClient({
             "directPrompt": "\u672c\u6b21\u5b9e\u9645\u53d1\u9001\u7ed9\u6a21\u578b\u7684\u76f4\u9a71\u590d\u523b prompt",
             "download": "\u4e0b\u8f7d",
             "downloadApproved": "\u6279\u91cf\u4e0b\u8f7d\u5df2\u901a\u8fc7\u56fe\u7247",
+            "downloadAllSequential": "\u6309\u5e8f\u4e0b\u8f7d\u5168\u90e8\u56fe\u7247",
+            "downloadAllSequentialPending": "\u6309\u5e8f\u4e0b\u8f7d\u4e2d...",
+            "downloadAllZip": "\u538b\u7f29\u5305\u4e0b\u8f7d\u5168\u90e8\u56fe\u7247",
             "approvedSummary": "\u5df2\u901a\u8fc7 {count} \u7ec4\u7ed3\u679c\uff0c\u53ef\u4e00\u952e\u6253\u5305\u4e0b\u8f7d\u3002",
+            "allImagesSummary": "\u5168\u90e8\u6210\u529f\u56fe\u7247 {count} \u5f20\uff0c\u53ef\u6309\u5e8f\u4e0b\u8f7d\u6216\u6253\u5305\u4e0b\u8f7d\u3002",
+            "noSuccessfulImages": "\u5f53\u524d\u8fd8\u6ca1\u6709\u6210\u529f\u751f\u6210\u7684\u56fe\u7247\u3002",
             "noApproved": "\u8fd8\u6ca1\u6709\u5df2\u901a\u8fc7\u7ed3\u679c\uff0c\u5148\u6311\u51fa\u4f60\u60f3\u4fdd\u7559\u7684\u56fe\u7247\u3002",
             "rerun": "\u518d\u6b21\u751f\u6210",
+            "rerunFromStrategy": "\u57fa\u4e8e\u7b56\u7565\u91cd\u751f",
             "resyncFeishu": "\u91cd\u65b0\u540c\u6b65\u98de\u4e66",
             "resyncingFeishu": "\u540c\u6b65\u4e2d...",
             "resyncFeishuSuccess": "\u98de\u4e66\u5df2\u91cd\u65b0\u540c\u6b65\uff0c\u6210\u529f\u56de\u5199 {uploaded} \u5f20\u56fe\uff0c\u5931\u8d25 {failed} \u5f20\u3002",
@@ -325,6 +335,23 @@ export function JobDetailsClient({
             "retryError": "\u91cd\u8bd5\u5931\u8d25",
             "jobError": "\u4efb\u52a1\u5931\u8d25\u539f\u56e0",
             "summary": "\u6458\u8981",
+            "marketingStrategy": "\u603b\u8425\u9500\u7b56\u7565",
+            "marketingStrategyRaw": "\u603b\u7b56\u7565 JSON",
+            "imageStrategy": "\u5355\u56fe\u7b56\u7565",
+            "imageStrategyRaw": "\u5355\u56fe\u7b56\u7565 JSON",
+            "strategyBadge": "\u7b56\u7565",
+            "targetAudience": "\u76ee\u6807\u4eba\u7fa4",
+            "conversionGoal": "\u8f6c\u5316\u76ee\u6807",
+            "prioritizedSellingPoints": "\u5356\u70b9\u4f18\u5148\u7ea7",
+            "avoidDirections": "\u4e0d\u5efa\u8bae\u65b9\u5411",
+            "marketingRole": "\u8425\u9500\u804c\u8d23",
+            "primarySellingPoint": "\u4e3b\u6253\u5356\u70b9",
+            "sceneType": "\u573a\u666f\u7c7b\u578b",
+            "compositionGuidance": "\u6784\u56fe\u5efa\u8bae",
+            "copySpaceGuidance": "\u6587\u6848\u7559\u767d",
+            "moodLighting": "\u60c5\u7eea\u4e0e\u5149\u7ebf",
+            "whyNeeded": "\u8fd9\u5f20\u56fe\u7684\u5fc5\u8981\u6027",
+            "strategyRerunError": "\u57fa\u4e8e\u7b56\u7565\u91cd\u751f\u5931\u8d25",
             "palette": "\u914d\u8272",
             "backgroundType": "\u80cc\u666f\u7c7b\u578b",
             "primaryPlacement": "\u4e3b\u5546\u54c1\u4f4d\u7f6e",
@@ -395,12 +422,10 @@ export function JobDetailsClient({
             "strengthBalanced": "Balanced",
             "strengthProduct": "Closer to source scene",
             "sourceAndReference": "Source / reference media",
-            "mediaBoardHint": "Keep source inputs on the side while the main workspace stays focused on generated results, so you can review without constant scrolling.",
             "previewWorkspace": "Review workspace",
             "previewWorkspaceHint": "Pick a variant and focus on the generated image, metadata, prompt, and review actions in one place.",
             "zoomHint": "Click the image to zoom in.",
             "variantBrowser": "Variant browser",
-            "variantBrowserHint": "Pick the generated variant here first and keep the full workspace below in sync.",
             "noGeneratedImage": "No generated image yet",
             "noMedia": "No images",
             "noPreviewAvailable": "This variant does not have any previewable output yet.",
@@ -420,9 +445,15 @@ export function JobDetailsClient({
             "directPrompt": "Direct remake prompt sent to the model",
             "download": "Download",
             "downloadApproved": "Download approved ZIP",
+            "downloadAllSequential": "Download all in order",
+            "downloadAllSequentialPending": "Downloading...",
+            "downloadAllZip": "Download all ZIP",
             "approvedSummary": "{count} approved variants are ready for batch download.",
+            "allImagesSummary": "{count} successful generated images are ready for sequential or ZIP download.",
+            "noSuccessfulImages": "There are no successfully generated images yet.",
             "noApproved": "No approved variants yet. Mark a few results first.",
             "rerun": "Run again",
+            "rerunFromStrategy": "Rerun from strategy",
             "resyncFeishu": "Resync Feishu",
             "resyncingFeishu": "Syncing...",
             "resyncFeishuSuccess": "Feishu resynced. Uploaded {uploaded} image(s), failed {failed}.",
@@ -430,6 +461,23 @@ export function JobDetailsClient({
             "retryError": "Retry failed",
             "jobError": "Job failure reason",
             "summary": "Summary",
+            "marketingStrategy": "Marketing strategy",
+            "marketingStrategyRaw": "Marketing strategy JSON",
+            "imageStrategy": "Image strategy",
+            "imageStrategyRaw": "Image strategy JSON",
+            "strategyBadge": "Strategy",
+            "targetAudience": "Target audience",
+            "conversionGoal": "Conversion goal",
+            "prioritizedSellingPoints": "Prioritized selling points",
+            "avoidDirections": "Avoid directions",
+            "marketingRole": "Marketing role",
+            "primarySellingPoint": "Primary selling point",
+            "sceneType": "Scene type",
+            "compositionGuidance": "Composition guidance",
+            "copySpaceGuidance": "Copy-space guidance",
+            "moodLighting": "Mood and lighting",
+            "whyNeeded": "Why this image exists",
+            "strategyRerunError": "Strategy rerun failed",
             "palette": "Palette",
             "backgroundType": "Background type",
             "primaryPlacement": "Primary product placement",
@@ -537,10 +585,28 @@ export function JobDetailsClient({
   );
   const comparedItems = comparableItems.filter((item) => compareIds.includes(item.id));
   const approvedItems = details.items.filter((item) => item.reviewStatus === "approved" && item.generatedAsset);
+  const successfulItems = details.items.filter((item) => item.generatedAsset);
+  const successfulDownloadQueue = dedupeDownloadFilenames(
+    successfulItems.map((item) =>
+      buildGeneratedImageDownloadName({
+        sourceAssetName: item.sourceAssetName && item.sourceAssetName !== "prompt-only" ? item.sourceAssetName : details.job.productName,
+        imageType: item.imageType,
+        creationMode: details.job.creationMode,
+        resolutionLabel: item.resolutionLabel,
+        ratio: item.ratio,
+        mimeType: item.generatedAsset!.mimeType,
+        language,
+      }),
+    ),
+  );
   const approvedSummaryText =
     approvedItems.length > 0
       ? text.approvedSummary.replace("{count}", String(approvedItems.length))
       : text.noApproved;
+  const allImagesSummaryText =
+    successfulItems.length > 0
+      ? text.allImagesSummary.replace("{count}", String(successfulItems.length))
+      : text.noSuccessfulImages;
   const actualPromptLabel = details.job.creationMode === "reference-remix" ? text.directPrompt : text.prompt;
   const creationModeLabel =
     details.job.creationMode === "reference-remix"
@@ -619,10 +685,6 @@ export function JobDetailsClient({
   const nextImageLabel = language === "zh" ? "下一张图" : "Next image";
   const lightboxActionLabel = language === "zh" ? "查看原图" : "View original";
   const currentFocusLabel = language === "zh" ? "当前查看" : "Current focus";
-  const currentFocusHint =
-    language === "zh"
-      ? "点击卡片或用上一项 / 下一项快速切换，当前项会自动定位到列表里。"
-      : "Switch by clicking a card or use previous / next. The current item stays in view.";
   const currentFocusSummary =
     activeItemIndex >= 0
       ? language === "zh"
@@ -767,6 +829,38 @@ export function JobDetailsClient({
     }
   }
 
+  async function handleDownloadAllSequential() {
+    if (!successfulItems.length || isDownloadingAllSequential) {
+      return;
+    }
+
+    setErrorMessage("");
+    setNoticeMessage("");
+    setIsDownloadingAllSequential(true);
+
+    try {
+      for (const [index, item] of successfulItems.entries()) {
+        const generatedAsset = item.generatedAsset;
+        if (!generatedAsset) {
+          continue;
+        }
+
+        const anchor = document.createElement("a");
+        anchor.href = assetDownloadUrl(generatedAsset.id, successfulDownloadQueue[index]);
+        anchor.download = successfulDownloadQueue[index];
+        anchor.rel = "noreferrer";
+        document.body.appendChild(anchor);
+        anchor.click();
+        document.body.removeChild(anchor);
+        await new Promise((resolve) => window.setTimeout(resolve, 180));
+      }
+    } catch {
+      setErrorMessage(language === "zh" ? "顺序下载失败" : "Sequential download failed");
+    } finally {
+      setIsDownloadingAllSequential(false);
+    }
+  }
+
   async function handleReviewUpdate(itemId: string, reviewStatus: JobItemReviewStatus) {
     const response = await fetch(`/api/job-items/${itemId}/review`, {
       method: "PATCH",
@@ -878,9 +972,28 @@ export function JobDetailsClient({
           {providerRequestSummaryText ? <p className="helper">{providerRequestSummaryText}</p> : null}
           {providerDownloadSummaryText ? <p className="helper">{providerDownloadSummaryText}</p> : null}
           {warningSummaryText ? <p className="helper warning-text">{warningSummaryText}</p> : null}
+          <p className="helper">{allImagesSummaryText}</p>
           <p className="helper">{approvedSummaryText}</p>
         </div>
         <div className="button-row header-actions">
+          {successfulItems.length ? (
+            <button className="ghost-button" disabled={isDownloadingAllSequential} onClick={handleDownloadAllSequential} type="button">
+              {isDownloadingAllSequential ? text.downloadAllSequentialPending : text.downloadAllSequential}
+            </button>
+          ) : (
+            <button className="ghost-button" disabled type="button">
+              {text.downloadAllSequential}
+            </button>
+          )}
+          {successfulItems.length ? (
+            <a className="ghost-button" href={allImagesDownloadUrl(details.job.id, language)}>
+              {text.downloadAllZip}
+            </a>
+          ) : (
+            <button className="ghost-button" disabled type="button">
+              {text.downloadAllZip}
+            </button>
+          )}
           {approvedItems.length ? (
             <a className="ghost-button" href={approvedDownloadUrl(details.job.id)}>
               {text.downloadApproved}
@@ -1024,7 +1137,6 @@ export function JobDetailsClient({
             <div className="split-header compact">
               <div>
                 <h3>{text.variantBrowser}</h3>
-                <p className="helper">{text.variantBrowserHint}</p>
               </div>
             </div>
             <div className="variant-browser-toolbar">
@@ -1032,7 +1144,6 @@ export function JobDetailsClient({
                 <span className="helper variant-browser-focus-label">{currentFocusLabel}</span>
                 <strong>{currentFocusSummary}</strong>
                 <p className="helper">{currentFocusMeta}</p>
-                <p className="helper">{currentFocusHint}</p>
               </div>
               <div className="variant-browser-toolbar-actions">
                 {comparedSummary ? <span className="variant-browser-summary-chip">{comparedSummary}</span> : null}
@@ -1146,58 +1257,6 @@ export function JobDetailsClient({
                     {activeItem.generatedAsset ? (
                       <button className="ghost-button mini-button" onClick={() => toggleCompare(activeItem.id)} type="button">
                         {compareIds.includes(activeItem.id) ? text.removeCompare : text.addCompare}
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {activeItem ? (
-              <div className="job-workbench-hero">
-                <div className="job-workbench-focus">
-                  <span className="helper variant-browser-focus-label">{currentFocusLabel}</span>
-                  <strong>{currentFocusSummary}</strong>
-                  <p className="helper">{currentFocusMeta}</p>
-                  <div className="variant-browser-tags">
-                    <span className={`variant-browser-state is-${activeItem.status}`}>{statusText(language, activeItem.status)}</span>
-                    <span className={`review-status-chip is-${activeItem.reviewStatus}`}>
-                      {reviewStatusText(language, activeItem.reviewStatus)}
-                    </span>
-                    {activeItem.generatedAsset ? <span className="variant-browser-chip">{text.generated}</span> : null}
-                    {comparedSummary ? <span className="variant-browser-summary-chip">{comparedSummary}</span> : null}
-                  </div>
-                </div>
-                <div className="job-workbench-hero-side">
-                  <div className="job-workbench-nav">
-                    <button className="ghost-button mini-button" disabled={!canSelectPreviousItem} onClick={selectPreviousItem} type="button">
-                      {previousItemLabel}
-                    </button>
-                    <button className="ghost-button mini-button" disabled={!canSelectNextItem} onClick={selectNextItem} type="button">
-                      {nextItemLabel}
-                    </button>
-                  </div>
-                  <div className="job-workbench-toolbar">
-                    <button className="ghost-button mini-button" onClick={() => handleReviewUpdate(activeItem.id, "shortlisted")} type="button">
-                      {text.shortlisted}
-                    </button>
-                    <button className="ghost-button mini-button" onClick={() => handleReviewUpdate(activeItem.id, "approved")} type="button">
-                      {text.approved}
-                    </button>
-                    <button className="ghost-button mini-button danger-button" onClick={() => handleReviewUpdate(activeItem.id, "rejected")} type="button">
-                      {text.rejected}
-                    </button>
-                    <button className="ghost-button mini-button" onClick={() => handleReviewUpdate(activeItem.id, "unreviewed")} type="button">
-                      {text.resetReview}
-                    </button>
-                    {activeItem.generatedAsset ? (
-                      <button className="ghost-button mini-button" onClick={() => toggleCompare(activeItem.id)} type="button">
-                        {compareIds.includes(activeItem.id) ? text.removeCompare : text.addCompare}
-                      </button>
-                    ) : null}
-                    {comparedItems.length ? (
-                      <button className="ghost-button mini-button" onClick={() => setCompareIds([])} type="button">
-                        {text.clearCompare}
                       </button>
                     ) : null}
                   </div>
@@ -1341,83 +1400,12 @@ export function JobDetailsClient({
                         <ul>
                           {activeItem.copy.highlights.map((highlight) => (
                             <li key={highlight}>{highlight}</li>
-                          ))}
-                        </ul>
-                      ) : null}
-                    </div>
-                  ) : null}
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
 
-                  {activeItem.errorMessage ? (
-                    <>
-                      <p className="error-text">{activeItem.errorMessage}</p>
-                      {activeItem.providerDebug?.imageUrl ||
-                      activeItem.providerDebug?.failureStage ||
-                      activeItem.providerDebug?.failureReason ||
-                      activeItem.providerDebug?.rawText ? (
-                        <div className="provider-debug-panel">
-                          {activeItem.providerDebug?.imageUrl ? (
-                            <div className="detail-kv-card provider-debug-card">
-                              <div className="detail-kv-head">
-                                <dt>{text.providerImageUrl}</dt>
-                                <div className="button-row compact-row">
-                                  <a className="ghost-button mini-button" href={activeItem.providerDebug.imageUrl} rel="noreferrer" target="_blank">
-                                    {text.openLink}
-                                  </a>
-                                  <button
-                                    className={`copy-chip-button${copiedFieldId === `provider-url-${activeItem.id}` ? " is-copied" : ""}`}
-                                    onClick={() => handleCopy(`provider-url-${activeItem.id}`, activeItem.providerDebug?.imageUrl || "")}
-                                    type="button"
-                                  >
-                                    {copiedFieldId === `provider-url-${activeItem.id}` ? text.copied : text.copy}
-                                  </button>
-                                </div>
-                              </div>
-                              <dd>{activeItem.providerDebug.imageUrl}</dd>
-                            </div>
-                          ) : null}
-                          {getFailureStageLabel(activeItem.providerDebug?.failureStage) ? (
-                            <div className="detail-kv-card provider-debug-card">
-                              <dt>{text.failureStage}</dt>
-                              <dd>{getFailureStageLabel(activeItem.providerDebug?.failureStage)}</dd>
-                            </div>
-                          ) : null}
-                          {activeItem.providerDebug?.failureReason ? (
-                            <div className="detail-kv-card provider-debug-card">
-                              <dt>{text.failureReason}</dt>
-                              <dd>{activeItem.providerDebug.failureReason}</dd>
-                            </div>
-                          ) : null}
-                          {activeItem.providerDebug?.rawText ? (
-                            <details className="provider-debug-details">
-                              <summary>{text.rawProviderResponse}</summary>
-                              <pre className="json-block prompt-block">{activeItem.providerDebug.rawText}</pre>
-                            </details>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </>
-                  ) : null}
-
-                  {activeItem.promptText ? (
-                    <details className="details-drawer prompt-details-drawer" key={`prompt-drawer-${activeItem.id}`}>
-                      <summary>{actualPromptLabel}</summary>
-                      <div className="prompt-debug-panel">
-                        <div className="detail-kv-head">
-                          <strong>{actualPromptLabel}</strong>
-                          <div className="button-row compact-row">
-                            <button
-                              className={`copy-chip-button${copiedFieldId === `prompt-${activeItem.id}` ? " is-copied" : ""}`}
-                              onClick={() => handleCopy(`prompt-${activeItem.id}`, activeItem.promptText || "")}
-                              type="button"
-                            >
-                              {copiedFieldId === `prompt-${activeItem.id}` ? text.copied : text.copy}
-                            </button>
-                          </div>
-                        </div>
-                        <pre className="json-block prompt-block">{activeItem.promptText}</pre>
-                      </div>
-                    </details>
-                  ) : null}
                 </aside>
               </div>
 
@@ -1447,18 +1435,17 @@ export function JobDetailsClient({
                           {previewAsset ? (
                             <img alt={previewAsset.originalName} decoding="async" loading="lazy" src={assetThumbUrl(previewAsset.id)} />
                           ) : (
-                            <div className="variant-browser-thumb-placeholder">{statusText(language, item.status)}</div>
+                            <div className="variant-browser-thumb-placeholder" />
                           )}
                           <span className="variant-browser-index">#{item.variantIndex}</span>
                         </div>
                         <div className="variant-browser-content">
-                          <div className="variant-browser-head">
-                            <strong className="variant-browser-title">
-                              {imageTypeLabel(language, item.imageType, details.job.creationMode)}
-                            </strong>
-                            {isActive ? <span className="variant-browser-active-pill">{currentFocusLabel}</span> : null}
-                          </div>
+                          <span className="variant-browser-type-chip">
+                            {imageTypeLabel(language, item.imageType, details.job.creationMode)}
+                          </span>
                           <span className="helper variant-browser-meta">
+                            #{item.variantIndex}
+                            {text.separator}
                             {item.ratio}
                             {text.separator}
                             {item.resolutionLabel}
@@ -1533,11 +1520,6 @@ export function JobDetailsClient({
         <div className="split-header compact">
           <div>
             <h3>{language === "zh" ? "信息面板" : "Detail hub"}</h3>
-            <p className="helper">
-              {language === "zh"
-                ? "把常用信息放进标签页，深层内容按抽屉展开，减少长页面来回滚动。"
-                : "Keep frequent information in tabs and expand deeper content only when needed."}
-            </p>
           </div>
         </div>
         <div aria-label={language === "zh" ? "详情标签" : "Detail tabs"} className="detail-tab-list" role="tablist">
@@ -1618,11 +1600,6 @@ export function JobDetailsClient({
 
       {activeDetailTab === "variants" ? (
       <section className="detail-tab-section">
-          <p className="helper">
-            {language === "zh"
-              ? "上方工作台聚焦当前结果，这里保留完整归档；按需展开单个变体即可查看全部细节。"
-              : "The workspace above stays focused on the current result. Expand a single variant here only when you need the full record."}
-          </p>
           <div className="variant-drawer-list">
           {details.items.map((item) => {
             const dimensionWarning = getDimensionWarning(item);
