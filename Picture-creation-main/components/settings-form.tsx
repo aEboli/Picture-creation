@@ -1,12 +1,20 @@
 "use client";
 
-import { type FormEvent, useMemo, useState, useTransition } from "react";
+import { type FormEvent, useEffect, useMemo, useState, useTransition } from "react";
+
+import { useRouter } from "next/navigation";
 
 import {
   formatFeishuFieldMapping,
   getLegacyFeishuFieldMappingJson,
   getRecommendedFeishuFieldMappingJson,
 } from "@/lib/feishu-field-mapping";
+import { shouldTestFeishuConnection } from "@/lib/connection-test-scope";
+import {
+  DEFAULT_BROWSER_API_SETTINGS,
+  readBrowserApiSettings,
+  writeBrowserApiSettings,
+} from "@/lib/browser-api-settings";
 import type { AppSettings, UiLanguage } from "@/lib/types";
 
 type TestResult = {
@@ -15,6 +23,7 @@ type TestResult = {
 };
 
 export function SettingsForm({ initialSettings, language }: { initialSettings: AppSettings; language: UiLanguage }) {
+  const router = useRouter();
   const [formState, setFormState] = useState(initialSettings);
   const [message, setMessage] = useState("");
   const [combinedTestMessage, setCombinedTestMessage] = useState("");
@@ -28,16 +37,16 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
       language === "zh"
         ? {
             sections: {
-              gemini: "Gemini / 中转设置",
+              gemini: "API / 中转设置",
               feishu: "飞书多维表格同步",
               storage: "素材与任务",
             },
             labels: {
+              defaultProvider: "API 提供商",
               defaultApiKey: "默认 API Key",
               defaultTextModel: "默认文本模型",
               defaultImageModel: "默认图像模型",
-              defaultApiBaseUrl: "Gemini Base URL / 中转地址",
-              defaultApiVersion: "API 版本",
+              defaultApiBaseUrl: "完整 Responses API URL / 中转地址",
               defaultApiHeaders: "自定义请求头 JSON（可选）",
               storageDir: "素材存储目录",
               maxConcurrency: "并发任务数",
@@ -51,7 +60,7 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
             },
             hero: {
               title: "设置中心",
-              subtitle: "统一管理 Gemini、飞书同步与本地素材任务。",
+              subtitle: "统一管理 API、飞书同步与本地素材任务。",
               idleFeedback: "点击“全局连接测试”后，会在这里显示紧凑测试结果。",
             },
             actions: {
@@ -63,10 +72,11 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
               testingAllConnections: "测试中...",
               testAllOk: "全局连接测试通过",
               testAllFailed: "全局连接测试失败",
-              providerOk: "Gemini / 中转连接成功",
-              providerFailed: "Gemini / 中转连接失败",
+              providerOk: "API / 中转连接成功",
+              providerFailed: "API / 中转连接失败",
               feishuOk: "飞书连接成功",
               feishuFailed: "飞书连接失败",
+              feishuSkipped: "飞书未启用，已跳过",
               unknownError: "未知错误",
               fillRecommendedMapping: "填入推荐模板",
               formatMapping: "格式化映射",
@@ -74,16 +84,16 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
           }
         : {
             sections: {
-              gemini: "Gemini / relay settings",
+              gemini: "API / relay settings",
               feishu: "Feishu Bitable sync",
               storage: "Assets and queue",
             },
             labels: {
+              defaultProvider: "API Provider",
               defaultApiKey: "Default API key",
               defaultTextModel: "Default text model",
               defaultImageModel: "Default image model",
-              defaultApiBaseUrl: "Gemini base URL / relay URL",
-              defaultApiVersion: "API version",
+              defaultApiBaseUrl: "Full Responses API URL / relay URL",
               defaultApiHeaders: "Custom headers JSON (optional)",
               storageDir: "Asset storage directory",
               maxConcurrency: "Max concurrent jobs",
@@ -97,7 +107,7 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
             },
             hero: {
               title: "Settings Center",
-              subtitle: "Manage Gemini, Feishu sync, and local runtime controls in one place.",
+              subtitle: "Manage API, Feishu sync, and local runtime controls in one place.",
               idleFeedback: "Run the global connection check to see compact status feedback here.",
             },
             actions: {
@@ -109,10 +119,11 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
               testingAllConnections: "Testing...",
               testAllOk: "Global connection test passed",
               testAllFailed: "Global connection test failed",
-              providerOk: "Gemini / relay connection succeeded",
-              providerFailed: "Gemini / relay connection failed",
+              providerOk: "API / relay connection succeeded",
+              providerFailed: "API / relay connection failed",
               feishuOk: "Feishu connection succeeded",
               feishuFailed: "Feishu connection failed",
+              feishuSkipped: "Feishu sync is disabled; skipped",
               unknownError: "Unknown error",
               fillRecommendedMapping: "Use recommended template",
               formatMapping: "Format mapping",
@@ -160,6 +171,42 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
     setFormState((current) => ({ ...current, ...patch }));
   }
 
+  function writeLocalApiSettings(settings: AppSettings) {
+    writeBrowserApiSettings({
+      provider: "openai",
+      apiKey: settings.defaultApiKey,
+      apiBaseUrl: settings.defaultApiBaseUrl,
+      apiHeaders: settings.defaultApiHeaders,
+      textModel: settings.defaultTextModel,
+      imageModel: settings.defaultImageModel,
+    });
+  }
+
+  function buildServerSettingsPayload(settings: AppSettings): AppSettings {
+    return {
+      ...settings,
+      defaultProvider: "openai",
+      defaultApiKey: "",
+      defaultApiBaseUrl: "",
+      defaultApiHeaders: "",
+      defaultTextModel: DEFAULT_BROWSER_API_SETTINGS.textModel,
+      defaultImageModel: DEFAULT_BROWSER_API_SETTINGS.imageModel,
+    };
+  }
+
+  useEffect(() => {
+    const browserSettings = readBrowserApiSettings();
+    setFormState((current) => ({
+      ...current,
+      defaultProvider: browserSettings.provider,
+      defaultApiKey: browserSettings.apiKey,
+      defaultApiBaseUrl: browserSettings.apiBaseUrl,
+      defaultApiHeaders: browserSettings.apiHeaders,
+      defaultTextModel: browserSettings.textModel,
+      defaultImageModel: browserSettings.imageModel,
+    }));
+  }, []);
+
   async function handleJsonRequest(url: string, okPrefix: string, failedPrefix: string): Promise<TestResult> {
     const response = await fetch(url, {
       method: "POST",
@@ -186,6 +233,7 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
   function submitSettings() {
     setMessage("");
     setCombinedTestMessage("");
+    writeLocalApiSettings(formState);
 
     startTransition(async () => {
       const response = await fetch("/api/settings", {
@@ -193,7 +241,7 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formState),
+        body: JSON.stringify(buildServerSettingsPayload(formState)),
       });
 
       if (!response.ok) {
@@ -204,9 +252,19 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
 
       const body = (await response.json().catch(() => null)) as AppSettings | null;
       if (body?.feishuFieldMappingJson) {
-        setFormState(body);
+        const browserSettings = readBrowserApiSettings();
+        setFormState({
+          ...body,
+          defaultProvider: browserSettings.provider,
+          defaultApiKey: browserSettings.apiKey,
+          defaultApiBaseUrl: browserSettings.apiBaseUrl,
+          defaultApiHeaders: browserSettings.apiHeaders,
+          defaultTextModel: browserSettings.textModel,
+          defaultImageModel: browserSettings.imageModel,
+        });
       }
       setMessage(text.actions.saved);
+      router.refresh();
     });
   }
 
@@ -222,9 +280,12 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
 
     startCombinedTestTransition(async () => {
       const providerResult = await handleJsonRequest("/api/settings/test", text.actions.providerOk, text.actions.providerFailed);
-      const feishuResult = await handleJsonRequest("/api/settings/test-feishu", text.actions.feishuOk, text.actions.feishuFailed);
+      const feishuResult = shouldTestFeishuConnection(formState)
+        ? await handleJsonRequest("/api/settings/test-feishu", text.actions.feishuOk, text.actions.feishuFailed)
+        : { ok: true, message: text.actions.feishuSkipped };
       const summaryPrefix = providerResult.ok && feishuResult.ok ? text.actions.testAllOk : text.actions.testAllFailed;
       setCombinedTestMessage(`${summaryPrefix}: ${providerResult.message} | ${feishuResult.message}`);
+      router.refresh();
     });
   }
 
@@ -266,6 +327,17 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
             <h3>{text.sections.gemini}</h3>
           </div>
           <div className="settings-fields-grid">
+            <div className="settings-field">
+              <label className="settings-label">{text.labels.defaultProvider}</label>
+              <select
+                className="settings-input"
+                value={formState.defaultProvider || "gemini"}
+                onChange={(e) => setFormState((s) => ({ ...s, defaultProvider: e.target.value }))}
+              >
+                <option value="gemini">API / 中转</option>
+                <option value="openai">OpenAI 兼容</option>
+              </select>
+            </div>
             <label>
               <span>{text.labels.defaultApiKey}</span>
               <input
@@ -277,16 +349,9 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
             <label>
               <span>{text.labels.defaultApiBaseUrl}</span>
               <input
-                placeholder="https://your-relay-host.example"
+                placeholder="https://api.asxs.top/v1/responses"
                 value={formState.defaultApiBaseUrl}
                 onChange={(event) => patchSettings({ defaultApiBaseUrl: event.target.value })}
-              />
-            </label>
-            <label>
-              <span>{text.labels.defaultApiVersion}</span>
-              <input
-                value={formState.defaultApiVersion}
-                onChange={(event) => patchSettings({ defaultApiVersion: event.target.value })}
               />
             </label>
             <label>

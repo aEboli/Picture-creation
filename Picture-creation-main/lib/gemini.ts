@@ -6,6 +6,8 @@ import { DEFAULT_INLINE_IMAGE_MAX_BYTES, getMaxImagesPerPromptForModel, isGemini
 // @ts-ignore - Node test imports this file directly and needs the explicit extension.
 import { appendQualityEnhancements } from "./prompt-quality-enhancements.ts";
 // @ts-ignore - Node test imports this file directly and needs the explicit extension.
+import { resolveProviderEndpoint } from "./provider-url.ts";
+// @ts-ignore - Node test imports this file directly and needs the explicit extension.
 import { buildPromptModePrompt, buildSizeSpecVisualCopyLines, getImageTypeGuide, normalizeSizeInfoToDualUnits } from "./templates.ts";
 // @ts-ignore - Node test imports this file directly and needs the explicit extension.
 import type {
@@ -466,13 +468,18 @@ export function buildMultimodalDiagnosticBranchConfig(
   const isOfficial = branchName === "official";
 
   if (!isOfficial) {
+    const endpoint = resolveProviderEndpoint({
+      apiBaseUrl: settings.defaultApiBaseUrl,
+      apiVersion: settings.defaultApiVersion,
+    });
+
     return {
       branchName,
       officialDirect: false,
-      baseUrlUsed: normalizeDiagnosticText(settings.defaultApiBaseUrl) || null,
+      baseUrlUsed: endpoint.baseUrl ?? null,
       apiKey: settings.defaultApiKey ?? "",
       model: settings.defaultTextModel ?? "",
-      apiVersion: settings.defaultApiVersion || undefined,
+      apiVersion: endpoint.apiVersion,
       apiHeaders: normalizeDiagnosticText(settings.defaultApiHeaders) || undefined,
     };
   }
@@ -848,15 +855,17 @@ function parseHeadersJson(rawHeaders?: string): Record<string, string> | undefin
 }
 
 function createClient(config: ProviderConfig) {
-  const baseUrl = config.apiBaseUrl?.trim();
-  const apiVersion = config.apiVersion?.trim();
+  const endpoint = resolveProviderEndpoint({
+    apiBaseUrl: config.apiBaseUrl,
+    apiVersion: config.apiVersion,
+  });
   const headers = parseHeadersJson(config.apiHeaders);
 
   return new GoogleGenAI({
     apiKey: config.apiKey,
-    apiVersion: apiVersion || undefined,
     httpOptions: {
-      baseUrl: baseUrl || undefined,
+      baseUrl: endpoint.baseUrl,
+      apiVersion: endpoint.apiVersion,
       headers,
     },
   });

@@ -31,20 +31,25 @@ function sourcePath(...parts) {
   return path.join(projectRoot, ...parts);
 }
 
-test("homepage source uses a centered symmetric hero and a 3x2 symmetric grid", () => {
+test("homepage source uses the compact dashboard hero, metrics grid, and action grid", () => {
   const pageContent = read(sourcePath("app", "page.tsx"));
-  const cssContent = read(sourcePath("app", "ui-ux-pro-max.css"));
+  const cssContent = [
+    read(sourcePath("app", "globals.css")),
+    read(sourcePath("app", "ui-ux-pro-max.css")),
+  ].join("\n");
 
-  assert.match(pageContent, /overview-symmetric-shell/);
-  assert.match(pageContent, /overview-symmetric-hero/);
-  assert.match(pageContent, /overview-symmetric-grid/);
-  assert.match(pageContent, /overview-symmetric-status-rail/);
-  assert.match(pageContent, /overview-symmetric-title/);
+  assert.match(pageContent, /className="dashboard"/);
+  assert.match(pageContent, /dashboard-hero/);
+  assert.match(pageContent, /dashboard-status-row/);
+  assert.match(pageContent, /dashboard-title/);
+  assert.match(pageContent, /dashboard-metrics/);
+  assert.match(pageContent, /dashboard-action-card/);
   assert.doesNotMatch(pageContent, /overview-slot-jobs/);
   assert.doesNotMatch(pageContent, /overview-slot-create/);
 
-  assert.match(cssContent, /\.overview-symmetric-shell/);
-  assert.match(cssContent, /\.overview-symmetric-hero/);
-  assert.match(cssContent, /\.overview-symmetric-grid/);
-  assert.match(cssContent, /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(cssContent, /\.dashboard\s*\{[\s\S]*display:\s*flex;/);
+  assert.match(cssContent, /\.dashboard-hero\s*\{[\s\S]*justify-content:\s*space-between;/);
+  assert.match(cssContent, /\.dashboard-metrics\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*1fr\);/);
+  assert.match(cssContent, /\.dashboard-actions\s*\{[\s\S]*grid-template-columns:\s*repeat\(3,\s*1fr\);/);
+  assert.match(cssContent, /@media \(min-width:\s*721px\)\s*\{[\s\S]*\.dashboard\s*\{[\s\S]*grid-template-rows:/);
 });

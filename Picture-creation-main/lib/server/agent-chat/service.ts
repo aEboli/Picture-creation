@@ -4,6 +4,7 @@ import { GoogleGenAI } from "@google/genai";
 
 import { resolveAgentProfileSettings } from "@/lib/agent-settings";
 import { getSettings } from "@/lib/db";
+import { resolveProviderEndpoint } from "@/lib/provider-url";
 
 const SUPPORTED_AGENT_TYPES = ["image-analyst", "prompt-engineer"] as const;
 type AgentType = (typeof SUPPORTED_AGENT_TYPES)[number];
@@ -254,23 +255,25 @@ function normalizeAssistantResponse(raw: Record<string, unknown>): AgentChatResp
 export async function runAgentChatFromFormData(formData: FormData): Promise<AgentChatResponse> {
   const settings = getSettings();
   if (!settings.defaultApiKey.trim() || !settings.defaultTextModel.trim()) {
-    throw new AgentChatRequestError("Gemini API key and text model must be configured in Settings.", 400);
+    throw new AgentChatRequestError("API key and text model must be configured in Settings.", 400);
   }
 
   const agentType = normalizeAgentType(formData.get("agentType"));
   const userText = readRequiredTextField(formData, "userText");
   const history = parseConversationHistory(formData);
   const imagePart = await readOptionalImage(formData);
-  const baseUrl = settings.defaultApiBaseUrl?.trim();
-  const apiVersion = settings.defaultApiVersion?.trim();
+  const endpoint = resolveProviderEndpoint({
+    apiBaseUrl: settings.defaultApiBaseUrl,
+    apiVersion: settings.defaultApiVersion,
+  });
   const headers = parseHeadersJson(settings.defaultApiHeaders);
   const agentSettings = resolveAgentProfileSettings(settings.agentSettingsJson, agentType);
 
   const client = new GoogleGenAI({
     apiKey: settings.defaultApiKey,
-    apiVersion: apiVersion || undefined,
     httpOptions: {
-      baseUrl: baseUrl || undefined,
+      baseUrl: endpoint.baseUrl,
+      apiVersion: endpoint.apiVersion,
       headers,
     },
   });

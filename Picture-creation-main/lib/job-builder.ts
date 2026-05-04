@@ -264,7 +264,7 @@ export function buildJobItems(sourceAssets: AssetRecord[], payload: CreatePayloa
           }))
       : [{ id: "", originalName: "strategy-only" }];
     const ratio = payload.selectedRatios[0] || "1:1";
-    const resolutionLabel = payload.selectedResolutions[0] || "4K";
+    const resolutionLabel = payload.selectedResolutions[0] || "1K";
 
     for (const sourceAsset of strategySourceEntries) {
       for (const imageType of structuredSelectedTypes) {

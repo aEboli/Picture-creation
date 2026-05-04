@@ -51,6 +51,9 @@ const generationSemanticsStub = {
   normalizeGenerationSemantics(value) {
     return value === "joint" || value === "batch" ? value : "batch";
   },
+  inferGenerationSemanticsFromSourceCount(sourceImageCount) {
+    return sourceImageCount > 1 ? "joint" : "batch";
+  },
   getRequestImageCount({ sourceImageCount = 0, referenceImageCount = 0 }) {
     return sourceImageCount + referenceImageCount;
   },
@@ -262,6 +265,7 @@ test("quick structured job creation no longer synthesizes marketingStrategy or i
         return { id: jobId, sourceAssets };
       },
     },
+    "@/lib/generation-semantics": generationSemanticsStub,
     "@/lib/server/jobs/lifecycle": {
       createAndEnqueueJob({ createInput }) {
         return { id: createInput.id };

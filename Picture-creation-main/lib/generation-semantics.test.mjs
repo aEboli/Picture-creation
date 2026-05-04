@@ -2,11 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  AUTO_SOURCE_IMAGE_LIMIT,
   getMaxReferenceImagesForSelection,
   getMaxSourceImagesForSelection,
   getPlannedRequestCount,
   getRequestInputGroupCount,
+  inferGenerationSemanticsFromSourceCount,
 } from "./generation-semantics.ts";
+
+test("auto source upload caps selection at five images", () => {
+  assert.equal(AUTO_SOURCE_IMAGE_LIMIT, 5);
+});
+
+test("auto source upload treats one image as single and multiple images as one multi-image input", () => {
+  assert.equal(inferGenerationSemanticsFromSourceCount(0), "batch");
+  assert.equal(inferGenerationSemanticsFromSourceCount(1), "batch");
+  assert.equal(inferGenerationSemanticsFromSourceCount(2), "joint");
+  assert.equal(inferGenerationSemanticsFromSourceCount(5), "joint");
+});
 
 test("joint semantics collapses multiple source images into a single request group", () => {
   assert.equal(

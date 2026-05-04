@@ -31,17 +31,36 @@ function sourcePath(...parts) {
   return path.join(projectRoot, ...parts);
 }
 
-test("create form source uses one unified structured field block for standard, suite, and amazon modes", () => {
+test("create form source uses dedicated workbench branches for every creation mode", () => {
   const uiContent = read(sourcePath("components", "create-job-form.tsx"));
+  const cssContent = read(sourcePath("app", "ui-ux-pro-max.css"));
 
-  assert.match(uiContent, /const isStructuredCommerceMode = payload\.creationMode === "standard" \|\| payload\.creationMode === "suite" \|\| payload\.creationMode === "amazon-a-plus";/);
-  assert.match(uiContent, /const commerceProductNameLabel = language === "zh" \? "图片名（必填）" : "Image name \(required\)";/);
-  assert.match(uiContent, /const commerceSellingPointsLabel = language === "zh" \? "卖点（选填）" : "Selling points \(optional\)";/);
-  assert.match(uiContent, /const commerceMaterialInfoLabel = language === "zh" \? "材质（选填）" : "Material \(optional\)";/);
-  assert.match(uiContent, /const commerceSizeInfoLabel = language === "zh" \? "尺寸规格（选填）" : "Size \/ specs \(optional\)";/);
-  assert.match(uiContent, /const commerceBrandNameLabel = language === "zh" \? "品牌名（选填）" : "Brand name \(optional\)";/);
-  assert.match(uiContent, /<span>\{commerceSellingPointsLabel\}<\/span>[\s\S]*<span>\{commerceMaterialInfoLabel\}<\/span>[\s\S]*<span>\{commerceSizeInfoLabel\}<\/span>[\s\S]*<span>\{commerceBrandNameLabel\}<\/span>/);
-  assert.doesNotMatch(uiContent, /payload\.creationMode === "suite"[\s\S]*<span>\{text\.category\}<\/span>/);
-  assert.doesNotMatch(uiContent, /payload\.creationMode === "amazon-a-plus"[\s\S]*<span>\{text\.category\}<\/span>/);
-  assert.doesNotMatch(uiContent, /payload\.creationMode === "standard"[\s\S]*<span>\{text\.category\}<\/span>/);
+  assert.match(uiContent, /CREATE_MODE_CLASS_NAMES/);
+  assert.match(uiContent, /type WorkbenchAreaKey = "assets" \| "brief" \| "settings" \| "submit"/);
+  assert.match(uiContent, /className="create-workbench-banner"/);
+  assert.match(uiContent, /className="create-area-dock"/);
+  assert.match(uiContent, /className="create-area-nav"/);
+  assert.match(uiContent, /onMouseEnter=\{\(\) => setActiveWorkbenchArea\(area\.key\)\}/);
+  assert.match(uiContent, /create-mode-option is-standard/);
+  assert.match(uiContent, /create-mode-option is-suite/);
+  assert.match(uiContent, /create-mode-option is-amazon/);
+  assert.match(uiContent, /create-mode-option is-prompt/);
+  assert.match(uiContent, /create-mode-option is-reference/);
+  assert.match(uiContent, /isStandardMode \? \([\s\S]*create-standard-fields/);
+  assert.match(uiContent, /isSuiteMode \? \([\s\S]*create-suite-fields/);
+  assert.match(uiContent, /isAmazonMode \? \([\s\S]*create-amazon-fields/);
+  assert.match(uiContent, /isPromptMode \? \([\s\S]*create-prompt-fields/);
+  assert.match(uiContent, /isReferenceMode \? \([\s\S]*create-reference-fields/);
+  assert.doesNotMatch(uiContent, /isStructuredCommerceMode \? \(\s*<>\s*<label/);
+
+  assert.match(cssContent, /CREATE WORKBENCH REMAKE PASS/);
+  assert.match(cssContent, /CREATE WORKBENCH PRODUCT MENU PASS/);
+  assert.match(cssContent, /\.create-workbench-banner\s*\{/);
+  assert.match(cssContent, /\.create-area-dock\s*\{/);
+  assert.match(cssContent, /\.create-area-panel:not\(\.is-active\)\s*\{/);
+  assert.match(cssContent, /grid-template-areas:\s*"banner"\s*"workbench";/);
+  assert.match(cssContent, /\.create-mode-option\s*\{/);
+  assert.match(cssContent, /\.create-standard-fields\s*\{/);
+  assert.match(cssContent, /\.create-suite-fields\s*,\s*\n\.create-amazon-fields\s*\{/);
+  assert.match(cssContent, /\.create-reference-status-grid\s*\{/);
 });

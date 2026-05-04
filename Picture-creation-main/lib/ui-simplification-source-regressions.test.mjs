@@ -118,12 +118,53 @@ test("header source groups the create-agent entry and primary nav inside a cente
     /className="app-header-center-cluster">[\s\S]*className="app-header-agent-slot"[\s\S]*className="app-header-nav-shell"/,
   );
   assert.match(cssContent, /\.app-header-center-cluster\s*\{/);
-  assert.match(cssContent, /grid-template-areas:\s*"stats center controls"/);
+  assert.match(cssContent, /\.app-header-insight-rail\s*\{[\s\S]*grid-area:\s*stats;/);
+  assert.match(cssContent, /\.app-header-center-cluster\s*\{[\s\S]*grid-area:\s*center;/);
+  assert.match(cssContent, /\.app-header-control-cluster\s*\{[\s\S]*grid-area:\s*controls;/);
   assert.match(cssContent, /\.app-header-center-cluster\s*\{[\s\S]*justify-content:\s*center;/);
   assert.match(
     cssContent,
-    /@media \(max-width:\s*720px\)\s*\{[\s\S]*\.app-header-center-cluster\s*\{[\s\S]*flex-wrap:\s*wrap;/,
+    /@media \(max-width:\s*1280px\)\s*\{[\s\S]*\.app-header-center-cluster\s*\{[\s\S]*justify-content:\s*flex-start;/,
   );
+});
+
+test("settings source uses one complete API URL input without a separate API version field", () => {
+  const settingsForm = read(sourcePath("components", "settings-form.tsx"));
+  const createForm = read(sourcePath("components", "create-job-form.tsx"));
+
+  assert.match(settingsForm, /完整 Responses API URL \/ 中转地址/);
+  assert.match(settingsForm, /Full Responses API URL \/ relay URL/);
+  assert.match(settingsForm, /placeholder="https:\/\/api\.asxs\.top\/v1\/responses"/);
+  assert.doesNotMatch(settingsForm, /text\.labels\.defaultApiVersion/);
+  assert.doesNotMatch(settingsForm, /patchSettings\(\{ defaultApiVersion:/);
+  assert.doesNotMatch(createForm, /temporaryApiVersion/);
+  assert.doesNotMatch(createForm, /apiVersion: payload\.temporaryApiVersion/);
+});
+
+test("connection status UI labels the provider probe as API instead of Gemini", () => {
+  const navigation = read(sourcePath("components", "navigation.tsx"));
+  const sidebarNav = read(sourcePath("components", "sidebar-nav.tsx"));
+  const homePage = read(sourcePath("app", "page.tsx"));
+  const settingsForm = read(sourcePath("components", "settings-form.tsx"));
+  const serviceDrawer = read(sourcePath("components", "service-settings-drawer.tsx"));
+
+  assert.match(navigation, /label:\s*"API",\s*state:\s*integrations\.gemini/);
+  assert.doesNotMatch(navigation, /label:\s*"Gemini",\s*state:\s*integrations\.gemini/);
+
+  assert.match(sidebarNav, /label:\s*"API",\s*state:\s*integrations\.gemini/);
+  assert.doesNotMatch(sidebarNav, /label:\s*"Gemini",\s*state:\s*integrations\.gemini/);
+
+  assert.match(homePage, /label:\s*"API",\s*state:\s*integrations\.gemini/);
+  assert.doesNotMatch(homePage, /label:\s*"Gemini",\s*state:\s*integrations\.gemini/);
+
+  assert.match(settingsForm, /<option value="gemini">API \/ 中转<\/option>/);
+  assert.doesNotMatch(settingsForm, />Gemini \/ 中转<\/option>/);
+  assert.match(settingsForm, /providerOk:\s*"API \/ relay connection succeeded"/);
+  assert.match(settingsForm, /providerFailed:\s*"API \/ relay connection failed"/);
+  assert.doesNotMatch(settingsForm, /Gemini \/ relay connection/);
+
+  assert.match(serviceDrawer, /<option value="gemini">API \/ 中转<\/option>/);
+  assert.doesNotMatch(serviceDrawer, />Gemini \/ 中转<\/option>/);
 });
 
 test("settings source uses centered hero, L-shaped desktop cards, and dual global footer actions", () => {

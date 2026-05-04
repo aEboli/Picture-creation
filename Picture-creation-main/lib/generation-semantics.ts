@@ -1,11 +1,17 @@
 import type { CreationMode, GenerationSemantics } from "./types.ts";
 
+export const AUTO_SOURCE_IMAGE_LIMIT = 5;
+
 function getMaxImagesPerPromptForModel(imageModel: string) {
   return imageModel.toLowerCase().includes("gemini-3") ? 14 : 3;
 }
 
 export function normalizeGenerationSemantics(value: unknown): GenerationSemantics {
   return value === "batch" ? "batch" : "joint";
+}
+
+export function inferGenerationSemanticsFromSourceCount(sourceImageCount: number): GenerationSemantics {
+  return sourceImageCount > 1 ? "joint" : "batch";
 }
 
 export function getRequestInputGroupCount(input: {

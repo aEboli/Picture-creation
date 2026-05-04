@@ -67,12 +67,15 @@ $cleanupItems = @(
   '.git',
   '.learnings',
   '.codex',
+  '.claude',
+  '.playwright-mcp',
   '.playwright-cli',
   '.runtime',
   'AGENTS.md',
   'ARCHITECTURE.md',
   'app',
   'components',
+  'data',
   'doc',
   'docs',
   'lib',
@@ -165,7 +168,11 @@ db.close();
   if (Test-Path $releaseAssetsDir) {
     Remove-Item -Path $releaseAssetsDir -Recurse -Force
   }
-  New-Item -ItemType Directory -Path $releaseAssetsDir -Force | Out-Null
+
+  $releaseDataDir = Join-Path $releaseDir '.\data'
+  if (Test-Path $releaseDataDir) {
+    Remove-Item -Path $releaseDataDir -Recurse -Force
+  }
 }
 
 $releaseScriptsDir = Join-Path $releaseDir 'scripts'
@@ -190,8 +197,8 @@ $launcher = @(
   '  pause',
   '  exit /b 1',
   ')',
-  'if not exist ".next\standalone\server.js" (',
-  '  echo Missing standalone server entry: .next\standalone\server.js',
+  'if not exist ".\server.js" if not exist ".next\standalone\server.js" (',
+  '  echo Missing standalone server entry: server.js or .next\standalone\server.js',
   '  pause',
   '  exit /b 1',
   ')',

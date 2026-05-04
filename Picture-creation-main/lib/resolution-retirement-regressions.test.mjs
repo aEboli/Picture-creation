@@ -49,6 +49,27 @@ test("create form migrates legacy resolution drafts and normalizes state to supp
   assert.match(content, /normalizeSelectedResolutions\(selectedResolutions\)/);
 });
 
+test("default resolution is 1K across create form, payload normalization, and job builder", () => {
+  const createForm = readSource("components", "create-job-form.tsx");
+  const payload = readSource("lib", "server", "generation", "payload.ts");
+  const jobBuilder = readSource("lib", "job-builder.ts");
+  const payloadOneKFallbacks = payload.match(
+    /selectedResolutions: payload\.selectedResolutions\?\.length \? \[payload\.selectedResolutions\[0\]\] : \["1K"\]/g,
+  ) ?? [];
+
+  assert.match(createForm, /const INITIAL_SELECTED_RESOLUTIONS = \["1K"\];/);
+  assert.match(createForm, /setSelectedResolutions\(\["1K"\]\);/);
+  assert.doesNotMatch(createForm, /const INITIAL_SELECTED_RESOLUTIONS = \["4K"\];/);
+  assert.doesNotMatch(createForm, /setSelectedResolutions\(\["4K"\]\);/);
+  assert.equal(payloadOneKFallbacks.length, 4);
+  assert.doesNotMatch(
+    payload,
+    /selectedResolutions: payload\.selectedResolutions\?\.length \? \[payload\.selectedResolutions\[0\]\] : \["4K"\]/,
+  );
+  assert.match(jobBuilder, /const resolutionLabel = payload\.selectedResolutions\[0\] \|\| "1K";/);
+  assert.doesNotMatch(jobBuilder, /const resolutionLabel = payload\.selectedResolutions\[0\] \|\| "4K";/);
+});
+
 test("payload validation explicitly rejects legacy 0.5K resolution instead of upgrading server-side", () => {
   const content = readSource("lib", "server", "generation", "payload.ts");
 

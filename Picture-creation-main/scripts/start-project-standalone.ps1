@@ -108,6 +108,19 @@ foreach ($logPath in @($resolvedOutLog, $resolvedErrLog)) {
   Out-File -FilePath $resolvedOutLog -Encoding utf8 -Append
 
 $standaloneRoot = [System.IO.Path]::Combine($resolvedProjectRoot, ".next", "standalone")
+$rootServerEntry = [System.IO.Path]::Combine($resolvedProjectRoot, "server.js")
+$standaloneServerEntry = [System.IO.Path]::Combine($standaloneRoot, "server.js")
+$serverEntry = if (Test-Path $rootServerEntry) {
+  "server.js"
+} elseif (Test-Path $standaloneServerEntry) {
+  ".next\standalone\server.js"
+} else {
+  throw "Missing standalone server entry: server.js or .next\standalone\server.js"
+}
+
+"[{0}] Server entry: {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'), $serverEntry |
+  Out-File -FilePath $resolvedOutLog -Encoding utf8 -Append
+
 Sync-StandaloneRuntimeAsset `
   -SourcePath ([System.IO.Path]::Combine($resolvedProjectRoot, ".next", "static")) `
   -TargetPath ([System.IO.Path]::Combine($standaloneRoot, ".next", "static")) `
@@ -119,5 +132,5 @@ Sync-StandaloneRuntimeAsset `
   -Label "public" `
   -LogPath $resolvedOutLog
 
-& $NodeExe ".next\standalone\server.js" 1>> $resolvedOutLog 2>> $resolvedErrLog
+& $NodeExe $serverEntry 1>> $resolvedOutLog 2>> $resolvedErrLog
 exit $LASTEXITCODE

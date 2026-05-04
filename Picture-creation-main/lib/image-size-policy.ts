@@ -36,6 +36,11 @@ export function meetsRequestedResolutionBucket(input: {
     return true;
   }
 
+  if (input.requestedResolutionLabel === "1K") {
+    const shortestSide = Math.min(input.actualWidth, input.actualHeight);
+    return shortestSide >= resolutionToPixels(input.requestedResolutionLabel);
+  }
+
   const longestSide = Math.max(input.actualWidth, input.actualHeight);
   return longestSide >= minimumLongestSideForBucket(input.requestedResolutionLabel);
 }
@@ -95,7 +100,11 @@ export function formatRequestedSizeDisplay(input: {
 }) {
   if (isGeminiImageSizeBucket(input.resolutionLabel)) {
     const normalizedLabel = input.resolutionLabel === "512px" ? "0.5K" : input.resolutionLabel;
-    return input.language === "zh" ? `${normalizedLabel} 档位` : `${normalizedLabel} bucket`;
+    const bucketLabel = input.language === "zh" ? `${normalizedLabel} 档位` : `${normalizedLabel} bucket`;
+    if (!input.width || !input.height) {
+      return bucketLabel;
+    }
+    return `${bucketLabel} (${input.width}x${input.height})`;
   }
 
   if (!input.width || !input.height) {

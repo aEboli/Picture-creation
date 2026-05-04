@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 
 import ts from "typescript";
 
+import { resolveProviderEndpoint } from "./provider-url.ts";
+
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function compileTsModule(filePath, stubs) {
@@ -96,6 +98,12 @@ const defaultAgentSettingsStub = {
   },
 };
 
+const defaultProviderUrlStub = {
+  "@/lib/provider-url": {
+    resolveProviderEndpoint,
+  },
+};
+
 test("runAgentChatFromFormData validates required fields and supported agent type", async () => {
   let requestCallCount = 0;
   const moduleExports = compileTsModule(path.join(projectRoot, "lib", "server", "agent-chat", "service.ts"), {
@@ -106,6 +114,7 @@ test("runAgentChatFromFormData validates required fields and supported agent typ
       },
     },
     ...defaultAgentSettingsStub,
+    ...defaultProviderUrlStub,
     "@google/genai": {
       GoogleGenAI: class {
         constructor() {
@@ -163,6 +172,7 @@ test("runAgentChatFromFormData sends image/history context to Gemini and normali
       },
     },
     ...defaultAgentSettingsStub,
+    ...defaultProviderUrlStub,
     "@google/genai": {
       GoogleGenAI: class {
         constructor(config) {
@@ -215,8 +225,8 @@ test("runAgentChatFromFormData sends image/history context to Gemini and normali
   );
 
   assert.equal(captured.constructorConfig?.apiKey, "test-key");
-  assert.equal(captured.constructorConfig?.apiVersion, "v9");
   assert.equal(captured.constructorConfig?.httpOptions?.baseUrl, "https://example-gateway.invalid");
+  assert.equal(captured.constructorConfig?.httpOptions?.apiVersion, "v9");
   assert.equal(captured.constructorConfig?.httpOptions?.headers?.["x-test"], "ok");
 
   const requestText = captured.request?.contents?.find((part) => part && typeof part.text === "string")?.text ?? "";
@@ -229,6 +239,49 @@ test("runAgentChatFromFormData sends image/history context to Gemini and normali
   );
 });
 
+test("runAgentChatFromFormData passes complete API URL without appending another API version", async () => {
+  const captured = {
+    constructorConfig: null,
+  };
+
+  const moduleExports = compileTsModule(path.join(projectRoot, "lib", "server", "agent-chat", "service.ts"), {
+    "server-only": {},
+    "@/lib/db": {
+      getSettings() {
+        return buildSettings({
+          defaultApiBaseUrl: "https://example-gateway.invalid/custom/v1beta/",
+          defaultApiVersion: "v1",
+        });
+      },
+    },
+    ...defaultAgentSettingsStub,
+    ...defaultProviderUrlStub,
+    "@google/genai": {
+      GoogleGenAI: class {
+        constructor(config) {
+          captured.constructorConfig = config;
+          this.models = {
+            generateContent: async () => ({
+              text: JSON.stringify({ assistantText: "ok" }),
+            }),
+          };
+        }
+      },
+    },
+  });
+
+  const { runAgentChatFromFormData } = moduleExports;
+
+  const formData = new FormData();
+  formData.append("agentType", "prompt-engineer");
+  formData.append("userText", "Draft a prompt.");
+
+  await runAgentChatFromFormData(formData);
+
+  assert.equal(captured.constructorConfig?.httpOptions?.baseUrl, "https://example-gateway.invalid/custom/v1beta");
+  assert.equal(captured.constructorConfig?.httpOptions?.apiVersion, "");
+});
+
 test("runAgentChatFromFormData normalizes prompt-engineer promptSuggestions and keeps them structured", async () => {
   const moduleExports = compileTsModule(path.join(projectRoot, "lib", "server", "agent-chat", "service.ts"), {
     "server-only": {},
@@ -238,6 +291,7 @@ test("runAgentChatFromFormData normalizes prompt-engineer promptSuggestions and 
       },
     },
     ...defaultAgentSettingsStub,
+    ...defaultProviderUrlStub,
     "@google/genai": {
       GoogleGenAI: class {
         constructor() {
@@ -295,6 +349,7 @@ test("runAgentChatFromFormData uses configured agent settings to replace the bui
       },
     },
     ...defaultAgentSettingsStub,
+    ...defaultProviderUrlStub,
     "@google/genai": {
       GoogleGenAI: class {
         constructor() {
@@ -337,6 +392,7 @@ test("runAgentChatFromFormData rejects malformed conversation history", async ()
       },
     },
     ...defaultAgentSettingsStub,
+    ...defaultProviderUrlStub,
     "@google/genai": {
       GoogleGenAI: class {
         constructor() {

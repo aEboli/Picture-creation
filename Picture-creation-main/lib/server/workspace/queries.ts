@@ -7,7 +7,8 @@ import { cache } from "react";
 import type { DashboardStats, JobListFilters, JobListSummary } from "@/lib/db";
 import { testFeishuConnection } from "@/lib/feishu";
 import { testProviderConnection } from "@/lib/gemini";
-import type { AppSettings, BrandRecord, JobRecord } from "@/lib/types";
+import { resolveProviderType } from "@/lib/provider-router";
+import type { AppSettings, BrandRecord, JobRecord, ServiceDrawerSettings } from "@/lib/types";
 
 import {
   getDashboardStatsSnapshot,
@@ -101,6 +102,11 @@ export interface SettingsPageData {
 let integrationProbeCache: IntegrationProbeCacheEntry | null = null;
 let integrationProbePromise: Promise<HomePageData["integrations"]> | null = null;
 
+export function clearIntegrationProbeCache() {
+  integrationProbeCache = null;
+  integrationProbePromise = null;
+}
+
 const readHomePageData = cache(async (): Promise<HomePageData> => {
   const settings = getSettingsSnapshot();
 
@@ -114,6 +120,8 @@ const readSettingsPageData = cache((): SettingsPageData => ({
   settings: getSettingsSnapshot(),
   brands: listBrandsSnapshot(),
 }));
+
+const readServiceDrawerSettings = cache((): ServiceDrawerSettings => redactSettingsForServiceDrawer(getSettingsSnapshot()));
 
 const readHistoryHeaderSummary = cache((): HeaderHistorySummary => {
   const summary = summarizeHistoryJobsByFilters({});
@@ -203,6 +211,24 @@ export function getSettingsPageData(): SettingsPageData {
   return readSettingsPageData();
 }
 
+export function getServiceDrawerSettingsForQuery(): ServiceDrawerSettings {
+  return readServiceDrawerSettings();
+}
+
+export function redactSettingsForServiceDrawer(settings: AppSettings): ServiceDrawerSettings {
+  return {
+    ...settings,
+    defaultApiKey: "",
+    defaultApiHeaders: "",
+    feishuAppSecret: "",
+    feishuFieldMappingJson: "{}",
+    agentSettingsJson: "{}",
+    hasExistingDefaultApiKey: Boolean(settings.defaultApiKey.trim()),
+    hasExistingDefaultApiHeaders: Boolean(settings.defaultApiHeaders.trim()),
+    hasExistingFeishuAppSecret: Boolean(settings.feishuAppSecret.trim()),
+  };
+}
+
 function createHistoryQueryString(searchParams: HistoryPageSearchParams): string {
   const normalized = new URLSearchParams();
 
@@ -260,12 +286,12 @@ async function getIntegrationProbeSnapshot(settings: AppSettings): Promise<HomeP
 
   if (!integrationProbePromise) {
     integrationProbePromise = (async () => {
-      const [gemini, feishu] = await Promise.all([
-        probeGeminiIntegration(settings),
+      const [api, feishu] = await Promise.all([
+        probeApiIntegration(settings),
         probeFeishuIntegration(settings),
       ]);
       const value = {
-        gemini,
+        gemini: api,
         feishu,
         lan: probeLanIntegration(),
       } satisfies HomePageData["integrations"];
@@ -287,6 +313,7 @@ async function getIntegrationProbeSnapshot(settings: AppSettings): Promise<HomeP
 
 function createIntegrationFingerprint(settings: AppSettings) {
   return JSON.stringify({
+    defaultProvider: settings.defaultProvider,
     defaultApiKey: settings.defaultApiKey,
     defaultTextModel: settings.defaultTextModel,
     defaultApiBaseUrl: settings.defaultApiBaseUrl,
@@ -303,21 +330,33 @@ function createIntegrationFingerprint(settings: AppSettings) {
   });
 }
 
-async function probeGeminiIntegration(settings: AppSettings): Promise<"ready" | "partial" | "inactive"> {
+async function probeApiIntegration(settings: AppSettings): Promise<"ready" | "partial" | "inactive"> {
   if (!settings.defaultApiKey.trim() || !settings.defaultTextModel.trim()) {
     return "inactive";
   }
 
   try {
-    await withProbeTimeout(
-      testProviderConnection({
-        apiKey: settings.defaultApiKey,
-        textModel: settings.defaultTextModel,
-        apiBaseUrl: settings.defaultApiBaseUrl,
-        apiVersion: settings.defaultApiVersion,
-        apiHeaders: settings.defaultApiHeaders,
-      }),
-    );
+    if (resolveProviderType(settings.defaultProvider) === "openai") {
+      const { testOpenAIConnection } = await import("@/lib/openai-provider");
+      await withProbeTimeout(
+        testOpenAIConnection({
+          apiKey: settings.defaultApiKey,
+          textModel: settings.defaultTextModel,
+          apiBaseUrl: settings.defaultApiBaseUrl,
+          apiHeaders: settings.defaultApiHeaders,
+        }),
+      );
+    } else {
+      await withProbeTimeout(
+        testProviderConnection({
+          apiKey: settings.defaultApiKey,
+          textModel: settings.defaultTextModel,
+          apiBaseUrl: settings.defaultApiBaseUrl,
+          apiVersion: settings.defaultApiVersion,
+          apiHeaders: settings.defaultApiHeaders,
+        }),
+      );
+    }
     return "ready";
   } catch {
     return "partial";

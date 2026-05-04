@@ -249,7 +249,6 @@ curl.exe "http://127.0.0.1:3888/api/assets/asset_xxx?download=1&filename=my-imag
 - `defaultTextModel`
 - `defaultImageModel`
 - `defaultApiBaseUrl`
-- `defaultApiVersion`
 - `defaultApiHeaders`
 - `storageDir`
 - `maxConcurrency`
@@ -261,6 +260,8 @@ curl.exe "http://127.0.0.1:3888/api/assets/asset_xxx?download=1&filename=my-imag
 - `feishuBitableTableId`
 - `feishuUploadParentType`
 - `feishuFieldMappingJson`
+
+其中 `defaultApiBaseUrl` 建议填写完整 API URL，例如 `http://127.0.0.1:8045/v1beta`；旧版拆分字段 `defaultApiVersion` 仍会被后端兼容，但不再作为推荐输入。
 
 #### `POST /api/settings/test`
 
@@ -729,7 +730,7 @@ Gemini / relay：
 ```powershell
 curl.exe -X POST "http://127.0.0.1:3888/api/settings/test" ^
   -H "Content-Type: application/json" ^
-  -d "{\"defaultApiKey\":\"xxx\",\"defaultApiBaseUrl\":\"http://127.0.0.1:8045\",\"defaultApiVersion\":\"v1beta\"}"
+  -d "{\"defaultApiKey\":\"xxx\",\"defaultTextModel\":\"gemini-2.5-flash\",\"defaultApiBaseUrl\":\"http://127.0.0.1:8045/v1beta\"}"
 ```
 
 飞书：
@@ -745,7 +746,7 @@ curl.exe -X POST "http://127.0.0.1:3888/api/settings/test-feishu" ^
 ```powershell
 curl.exe -X POST "http://127.0.0.1:3888/api/settings/test-multimodal" ^
   -H "Content-Type: application/json" ^
-  -d "{\"apiKey\":\"xxx\",\"apiBaseUrl\":\"http://127.0.0.1:8045\",\"apiVersion\":\"v1beta\",\"textModel\":\"gemini-3-flash\"}"
+  -d "{\"apiKey\":\"xxx\",\"apiBaseUrl\":\"http://127.0.0.1:8045/v1beta\",\"textModel\":\"gemini-3-flash\"}"
 ```
 
 ---

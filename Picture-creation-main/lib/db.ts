@@ -436,6 +436,10 @@ function ensureSettingsColumns(database: DatabaseSync) {
       name: "agent_settings_json",
       statement: "ALTER TABLE settings ADD COLUMN agent_settings_json TEXT NOT NULL DEFAULT '{}'",
     },
+    {
+      name: "default_provider",
+      statement: "ALTER TABLE settings ADD COLUMN default_provider TEXT NOT NULL DEFAULT 'gemini'",
+    },
   ];
 
   for (const column of columnDefinitions) {
@@ -878,6 +882,7 @@ export function getSettings(): AppSettings {
     defaultApiBaseUrl: row.default_api_base_url ?? "",
     defaultApiVersion: row.default_api_version ?? "v1beta",
     defaultApiHeaders: row.default_api_headers ?? "",
+    defaultProvider: row.default_provider ?? "gemini",
     storageDir: row.storage_dir,
     maxConcurrency: row.max_concurrency,
     defaultUiLanguage: row.default_ui_language,
@@ -902,6 +907,7 @@ export function updateSettings(input: Partial<AppSettings>): AppSettings {
     defaultApiBaseUrl: input.defaultApiBaseUrl ?? settings.defaultApiBaseUrl,
     defaultApiVersion: input.defaultApiVersion ?? settings.defaultApiVersion,
     defaultApiHeaders: input.defaultApiHeaders ?? settings.defaultApiHeaders,
+    defaultProvider: input.defaultProvider ?? settings.defaultProvider,
     storageDir: input.storageDir ?? settings.storageDir,
     maxConcurrency: input.maxConcurrency ?? settings.maxConcurrency,
     defaultUiLanguage: input.defaultUiLanguage ?? settings.defaultUiLanguage,
@@ -924,6 +930,7 @@ export function updateSettings(input: Partial<AppSettings>): AppSettings {
         default_api_base_url = ?,
         default_api_version = ?,
         default_api_headers = ?,
+        default_provider = ?,
         storage_dir = ?,
         max_concurrency = ?,
         default_ui_language = ?,
@@ -945,6 +952,7 @@ export function updateSettings(input: Partial<AppSettings>): AppSettings {
       nextSettings.defaultApiBaseUrl,
       nextSettings.defaultApiVersion,
       nextSettings.defaultApiHeaders,
+      nextSettings.defaultProvider,
       nextSettings.storageDir,
       nextSettings.maxConcurrency,
       nextSettings.defaultUiLanguage,

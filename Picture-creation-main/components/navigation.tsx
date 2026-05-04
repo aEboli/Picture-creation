@@ -75,7 +75,7 @@ export function Navigation({
         ];
 
   const integrationChips = [
-    { label: "Gemini", state: integrations.gemini },
+    { label: "API", state: integrations.gemini },
     { label: language === "zh" ? "飞书" : "Feishu", state: integrations.feishu },
     { label: "LAN", state: integrations.lan },
   ];

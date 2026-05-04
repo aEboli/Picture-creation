@@ -20,6 +20,20 @@ function buildStoredAssetPath(dir: string, assetId: string, mimeType: string) {
   }
 }
 
+export function buildAssetDayFolder(isoValue = nowIso()) {
+  const date = new Date(isoValue);
+
+  if (Number.isNaN(date.getTime())) {
+    const compact = isoValue.slice(0, 10).replaceAll("-", "");
+    return compact.length === 8 ? compact.slice(2) : "unknown";
+  }
+
+  const year = String(date.getFullYear()).slice(-2);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}${month}${day}`;
+}
+
 async function resolveStoredAssetPath(filePath: string, mimeType: string) {
   try {
     await fs.access(filePath);
@@ -55,7 +69,7 @@ export async function writeFileAsset(input: {
 }): Promise<AssetRecord> {
   const storageDir = await ensureStorageDir();
   const assetId = createId("asset");
-  const dayFolder = nowIso().slice(0, 10);
+  const dayFolder = buildAssetDayFolder();
   const dir = path.join(storageDir, dayFolder);
   await fs.mkdir(dir, { recursive: true });
   const filePath = buildStoredAssetPath(dir, assetId, input.mimeType);

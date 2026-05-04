@@ -41,7 +41,7 @@
 | 前端 | 任意 React Web UI | `Next.js App Router + React + TypeScript` | 现有页面、API route、构建与打包都已围绕 Next 建立 |
 | 服务端 | 独立 Node 服务 / Electron 主进程 | `Next.js Route Handlers + server-only service modules` | 便于共用同一仓库、同一构建产物与本地启动方式 |
 | 数据层 | SQLite / 远程数据库 | `本地 SQLite + 文件系统资产目录` | 适合离线/局域网单机场景，迁移成本低 |
-| 模型接入 | 直连 API / 兼容 Relay | `@google/genai + 可配置 baseUrl/apiVersion/headers` | 兼容官方 Gemini 与本地/内网 Relay |
+| 模型接入 | 直连 API / 兼容 Relay | `@google/genai + 完整 API URL/headers` | 兼容官方 Gemini 与本地/内网 Relay |
 | 部署/工具链 | 纯源码运行 / 自定义安装器 | `Next build + PowerShell 打包脚本 + Windows 安装器` | 当前交付目标就是本地可安装、可分发 |
 
 ## 目录分层草案

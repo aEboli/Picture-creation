@@ -55,11 +55,30 @@ export function updateSettingsFromInput(input: Partial<AppSettings> | null | und
   return updateSettingsSnapshot(normalizedBody);
 }
 
+function mergeSettingsForSecretAwareRequest(input: Partial<AppSettings> | null | undefined): AppSettings {
+  return {
+    ...getSettingsSnapshot(),
+    ...(input ?? {}),
+  };
+}
+
 export async function testProviderConnectionFromInput(input: Partial<AppSettings> | null | undefined) {
-  const body = input ?? {};
+  const body = mergeSettingsForSecretAwareRequest(input);
+  const provider = body.defaultProvider || "gemini";
 
   if (!body.defaultApiKey || !body.defaultTextModel) {
     throw new SettingsServiceError("API key and text model are required.", 400);
+  }
+
+  if (provider === "openai") {
+    const { testOpenAIConnection } = await import("@/lib/openai-provider");
+    const result = await testOpenAIConnection({
+      apiKey: body.defaultApiKey || "",
+      textModel: body.defaultTextModel || "gpt-5.5",
+      apiBaseUrl: body.defaultApiBaseUrl || undefined,
+      apiHeaders: body.defaultApiHeaders || undefined,
+    });
+    return result;
   }
 
   return testProviderConnection({
@@ -72,7 +91,7 @@ export async function testProviderConnectionFromInput(input: Partial<AppSettings
 }
 
 export async function testFeishuConnectionFromInput(input: Partial<AppSettings> | null | undefined) {
-  const body = input ?? {};
+  const body = mergeSettingsForSecretAwareRequest(input);
 
   if (!body.feishuAppId || !body.feishuAppSecret || !body.feishuBitableAppToken || !body.feishuBitableTableId) {
     throw new SettingsServiceError("Feishu App ID, App Secret, Bitable App Token, and Table ID are required.", 400);
@@ -91,6 +110,7 @@ export async function testFeishuConnectionFromInput(input: Partial<AppSettings> 
     defaultApiBaseUrl: "",
     defaultApiVersion: "v1beta",
     defaultApiHeaders: "",
+    defaultProvider: "gemini",
     storageDir: "",
     maxConcurrency: 1,
     defaultUiLanguage: "zh",

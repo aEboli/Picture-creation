@@ -1,7 +1,9 @@
 import "server-only";
 
+import { resolveProviderType } from "@/lib/provider-router";
+
 import {
-  analyzeProductImageFeatures,
+  analyzeProductImageFeatures as analyzeGeminiProductImageFeatures,
   generateEditedImage,
   generateFeaturePromptCopyBundle,
   generateModeWorkflowCopyBundle,
@@ -47,6 +49,8 @@ import {
 } from "./process-helpers";
 import { normalizeGenerationSemantics } from "@/lib/generation-semantics";
 
+type ProductImageFeatureAnalysisResult = Awaited<ReturnType<typeof analyzeGeminiProductImageFeatures>>;
+
 function normalizePromptInputs(input: { promptInputs: string[]; customPrompt: string }): string[] {
   const explicitInputs = Array.isArray(input.promptInputs)
     ? input.promptInputs.map((value) => value.trim()).filter(Boolean)
@@ -76,9 +80,13 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
   const apiBaseUrl = providerOverride?.apiBaseUrl ?? settings.defaultApiBaseUrl;
   const apiVersion = providerOverride?.apiVersion ?? settings.defaultApiVersion;
   const apiHeaders = providerOverride?.apiHeaders ?? settings.defaultApiHeaders;
+  const textModel = providerOverride?.textModel || settings.defaultTextModel;
+  const imageModel = providerOverride?.imageModel || settings.defaultImageModel;
+
+  const providerType = resolveProviderType(providerOverride?.provider ?? settings.defaultProvider);
 
   if (!apiKey) {
-    updateJobStatus(jobId, "failed", "Gemini API key is missing.");
+    updateJobStatus(jobId, "failed", "API key is missing.");
     return;
   }
 
@@ -116,17 +124,32 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
               return promptInput;
             }
 
-            return await translateUserPromptInputs({
-              apiKey,
-              textModel: settings.defaultTextModel,
-              apiBaseUrl,
-              apiVersion,
-              apiHeaders,
-              country: job.country,
-              language: job.language,
-              platform: job.platform,
-              customPrompt: promptInput,
-            })
+            return await (providerType === "openai"
+              ? import("@/lib/openai-provider").then((m) =>
+                  m.translateUserPromptInputs({
+                    apiKey,
+                    textModel,
+                    apiBaseUrl,
+                    apiVersion,
+                    apiHeaders,
+                    country: job.country,
+                    language: job.language,
+                    platform: job.platform,
+                    customPrompt: promptInput,
+                  }),
+                )
+              : translateUserPromptInputs({
+                  apiKey,
+                  textModel,
+                  apiBaseUrl,
+                  apiVersion,
+                  apiHeaders,
+                  country: job.country,
+                  language: job.language,
+                  platform: job.platform,
+                  customPrompt: promptInput,
+                })
+            )
               .then((result) => result.customPrompt)
               .catch(() => promptInput);
           }),
@@ -149,41 +172,82 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
   const workflowMode = job.creationMode === "reference-remix" ? job.creationMode : null;
   const primarySourceAsset = sourceAssets[0] ?? null;
   const primaryReferenceAsset = referenceAssets[0] ?? null;
-  const structuredFeatureAnalysisCache = new Map<string, Promise<Awaited<ReturnType<typeof analyzeProductImageFeatures>>>>();
+  const structuredFeatureAnalysisCache = new Map<string, Promise<ProductImageFeatureAnalysisResult>>();
+
+  const workflowAnalysisSourceBuffer = workflowMode && primarySourceAsset ? await readAssetBuffer(primarySourceAsset) : null;
+  const workflowAnalysisRefBuffer =
+    workflowMode && (workflowMode === "reference-remix" || workflowMode === "standard") && primaryReferenceAsset
+      ? await readAssetBuffer(primaryReferenceAsset)
+      : null;
 
   const workflowAnalysis =
-    workflowMode && primarySourceAsset
-      ? await generateSharedModeAnalysis({
-          apiKey,
-          textModel: settings.defaultTextModel,
-          apiBaseUrl,
-          apiVersion,
-          apiHeaders,
-          mode: workflowMode,
-          sourceImage: {
-            mimeType: primarySourceAsset.mimeType,
-            buffer: await readAssetBuffer(primarySourceAsset),
-          },
-          referenceImage:
-            (workflowMode === "reference-remix" || workflowMode === "standard") && primaryReferenceAsset
-              ? {
-                  mimeType: primaryReferenceAsset.mimeType,
-                  buffer: await readAssetBuffer(primaryReferenceAsset),
-                }
-              : null,
-          country: job.country,
-          language: job.language,
-          platform: job.platform,
-          category: job.category,
-          productName: effectiveInputs.productName,
-          brandName: job.brandName,
-          sellingPoints: effectiveInputs.sellingPoints,
-          restrictions: effectiveInputs.restrictions,
-          sourceDescription: effectiveInputs.sourceDescription,
-          materialInfo: effectiveInputs.materialInfo,
-          sizeInfo: effectiveInputs.sizeInfo,
-          imageType: job.creationMode === "standard" ? "scene" : undefined,
-        }).catch(() => null)
+    workflowMode && primarySourceAsset && workflowAnalysisSourceBuffer
+      ? await (providerType === "openai"
+          ? import("@/lib/openai-provider").then((m) =>
+              m.generateSharedModeAnalysis({
+                apiKey,
+                textModel,
+                apiBaseUrl,
+                apiVersion,
+                apiHeaders,
+                mode: workflowMode,
+                sourceImage: {
+                  mimeType: primarySourceAsset.mimeType,
+                  buffer: workflowAnalysisSourceBuffer,
+                },
+                referenceImage:
+                  workflowAnalysisRefBuffer && primaryReferenceAsset
+                    ? {
+                        mimeType: primaryReferenceAsset.mimeType,
+                        buffer: workflowAnalysisRefBuffer,
+                      }
+                    : null,
+                country: job.country,
+                language: job.language,
+                platform: job.platform,
+                category: job.category,
+                productName: effectiveInputs.productName,
+                brandName: job.brandName,
+                sellingPoints: effectiveInputs.sellingPoints,
+                restrictions: effectiveInputs.restrictions,
+                sourceDescription: effectiveInputs.sourceDescription,
+                materialInfo: effectiveInputs.materialInfo,
+                sizeInfo: effectiveInputs.sizeInfo,
+                imageType: job.creationMode === "standard" ? "scene" : undefined,
+              }),
+            )
+          : generateSharedModeAnalysis({
+              apiKey,
+              textModel,
+              apiBaseUrl,
+              apiVersion,
+              apiHeaders,
+              mode: workflowMode,
+              sourceImage: {
+                mimeType: primarySourceAsset.mimeType,
+                buffer: await readAssetBuffer(primarySourceAsset),
+              },
+              referenceImage:
+                (workflowMode === "reference-remix" || workflowMode === "standard") && primaryReferenceAsset
+                  ? {
+                      mimeType: primaryReferenceAsset.mimeType,
+                      buffer: await readAssetBuffer(primaryReferenceAsset),
+                    }
+                  : null,
+              country: job.country,
+              language: job.language,
+              platform: job.platform,
+              category: job.category,
+              productName: effectiveInputs.productName,
+              brandName: job.brandName,
+              sellingPoints: effectiveInputs.sellingPoints,
+              restrictions: effectiveInputs.restrictions,
+              sourceDescription: effectiveInputs.sourceDescription,
+              materialInfo: effectiveInputs.materialInfo,
+              sizeInfo: effectiveInputs.sizeInfo,
+              imageType: job.creationMode === "standard" ? "scene" : undefined,
+            })
+        ).catch(() => null)
       : null;
 
   if (job.creationMode === "reference-remix") {
@@ -262,25 +326,31 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
           ? await (async () => {
               const cacheKey = generationSemantics === "joint" ? "joint" : sourceAsset?.id || item.sourceAssetId || item.id;
               if (!structuredFeatureAnalysisCache.has(cacheKey)) {
+                const analysisInput = {
+                  apiKey,
+                  textModel,
+                  apiBaseUrl,
+                  apiVersion,
+                  apiHeaders,
+                  sourceImages,
+                  country: job.country,
+                  language: job.language,
+                  platform: job.platform,
+                  category: job.category,
+                  productName: effectiveInputs.productName,
+                  brandName: job.brandName,
+                  sellingPoints: effectiveInputs.sellingPoints,
+                  materialInfo: effectiveInputs.materialInfo,
+                  sizeInfo: effectiveInputs.sizeInfo,
+                };
+                const analysisTask =
+                  providerType === "openai"
+                    ? import("@/lib/openai-provider").then((m) => m.analyzeProductImageFeatures(analysisInput))
+                    : analyzeGeminiProductImageFeatures(analysisInput);
+
                 structuredFeatureAnalysisCache.set(
                   cacheKey,
-                  analyzeProductImageFeatures({
-                    apiKey,
-                    textModel: settings.defaultTextModel,
-                    apiBaseUrl,
-                    apiVersion,
-                    apiHeaders,
-                    sourceImages,
-                    country: job.country,
-                    language: job.language,
-                    platform: job.platform,
-                    category: job.category,
-                    productName: effectiveInputs.productName,
-                    brandName: job.brandName,
-                    sellingPoints: effectiveInputs.sellingPoints,
-                    materialInfo: effectiveInputs.materialInfo,
-                    sizeInfo: effectiveInputs.sizeInfo,
-                  }).catch(() => ({
+                  analysisTask.catch(() => ({
                     mainSubject: effectiveInputs.productName || item.imageType,
                     categoryGuess: job.category || "general product",
                     coreFeatures: effectiveInputs.sellingPoints
@@ -311,56 +381,111 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
 
       copy =
         structuredAgentMode && currentStructuredFeatureAnalysis
-          ? await generateFeaturePromptCopyBundle({
-              apiKey,
-              textModel: settings.defaultTextModel,
-              apiBaseUrl,
-              apiVersion,
-              apiHeaders,
-              mode: structuredAgentMode,
-              sourceImages,
-              analysis: currentStructuredFeatureAnalysis,
-              imageType: item.imageType,
-              country: job.country,
-              language: job.language,
-              platform: job.platform,
-              category: job.category,
-              productName: effectiveInputs.productName,
-              brandName: job.brandName,
-              sellingPoints: effectiveInputs.sellingPoints,
-              materialInfo: effectiveInputs.materialInfo,
-              sizeInfo: effectiveInputs.sizeInfo,
-              ratio: item.ratio,
-              resolutionLabel: item.resolutionLabel,
-              groupIndex: item.variantIndex,
-              groupCount: job.variantsPerType,
-            })
+          ? await (providerType === "openai"
+              ? import("@/lib/openai-provider").then((m) =>
+                  m.generateFeaturePromptCopyBundle({
+                    apiKey,
+                    textModel,
+                    apiBaseUrl,
+                    apiVersion,
+                    apiHeaders,
+                    mode: structuredAgentMode,
+                    sourceImages,
+                    analysis: currentStructuredFeatureAnalysis,
+                    imageType: item.imageType,
+                    country: job.country,
+                    language: job.language,
+                    platform: job.platform,
+                    category: job.category,
+                    productName: effectiveInputs.productName,
+                    brandName: job.brandName,
+                    sellingPoints: effectiveInputs.sellingPoints,
+                    materialInfo: effectiveInputs.materialInfo,
+                    sizeInfo: effectiveInputs.sizeInfo,
+                    ratio: item.ratio,
+                    resolutionLabel: item.resolutionLabel,
+                    groupIndex: item.variantIndex,
+                    groupCount: job.variantsPerType,
+                  }),
+                )
+              : generateFeaturePromptCopyBundle({
+                  apiKey,
+                  textModel,
+                  apiBaseUrl,
+                  apiVersion,
+                  apiHeaders,
+                  mode: structuredAgentMode,
+                  sourceImages,
+                  analysis: currentStructuredFeatureAnalysis,
+                  imageType: item.imageType,
+                  country: job.country,
+                  language: job.language,
+                  platform: job.platform,
+                  category: job.category,
+                  productName: effectiveInputs.productName,
+                  brandName: job.brandName,
+                  sellingPoints: effectiveInputs.sellingPoints,
+                  materialInfo: effectiveInputs.materialInfo,
+                  sizeInfo: effectiveInputs.sizeInfo,
+                  ratio: item.ratio,
+                  resolutionLabel: item.resolutionLabel,
+                  groupIndex: item.variantIndex,
+                  groupCount: job.variantsPerType,
+                }))
           : workflowMode
-          ? await generateModeWorkflowCopyBundle({
-              apiKey,
-              textModel: settings.defaultTextModel,
-              apiBaseUrl,
-              apiVersion,
-              apiHeaders,
-              mode: workflowMode,
-              imageType: item.imageType,
-              analysis: currentWorkflowAnalysis,
-              country: job.country,
-              language: job.language,
-              platform: job.platform,
-              category: job.category,
-              productName: effectiveInputs.productName,
-              brandName: job.brandName,
-              sellingPoints: effectiveInputs.sellingPoints,
-              restrictions: effectiveInputs.restrictions,
-              sourceDescription: effectiveInputs.sourceDescription,
-              materialInfo: effectiveInputs.materialInfo,
-              sizeInfo: effectiveInputs.sizeInfo,
-              ratio: item.ratio,
-              resolutionLabel: item.resolutionLabel,
-              brandProfile,
-              template: matchedTemplate,
-            })
+          ? await (providerType === "openai"
+              ? import("@/lib/openai-provider").then((m) =>
+                  m.generateModeWorkflowCopyBundle({
+                    apiKey,
+                    textModel,
+                    apiBaseUrl,
+                    apiVersion,
+                    apiHeaders,
+                    mode: workflowMode,
+                    imageType: item.imageType,
+                    analysis: currentWorkflowAnalysis,
+                    country: job.country,
+                    language: job.language,
+                    platform: job.platform,
+                    category: job.category,
+                    productName: effectiveInputs.productName,
+                    brandName: job.brandName,
+                    sellingPoints: effectiveInputs.sellingPoints,
+                    restrictions: effectiveInputs.restrictions,
+                    sourceDescription: effectiveInputs.sourceDescription,
+                    materialInfo: effectiveInputs.materialInfo,
+                    sizeInfo: effectiveInputs.sizeInfo,
+                    ratio: item.ratio,
+                    resolutionLabel: item.resolutionLabel,
+                    brandProfile,
+                    template: matchedTemplate,
+                  }),
+                )
+              : generateModeWorkflowCopyBundle({
+                  apiKey,
+                  textModel,
+                  apiBaseUrl,
+                  apiVersion,
+                  apiHeaders,
+                  mode: workflowMode,
+                  imageType: item.imageType,
+                  analysis: currentWorkflowAnalysis,
+                  country: job.country,
+                  language: job.language,
+                  platform: job.platform,
+                  category: job.category,
+                  productName: effectiveInputs.productName,
+                  brandName: job.brandName,
+                  sellingPoints: effectiveInputs.sellingPoints,
+                  restrictions: effectiveInputs.restrictions,
+                  sourceDescription: effectiveInputs.sourceDescription,
+                  materialInfo: effectiveInputs.materialInfo,
+                  sizeInfo: effectiveInputs.sizeInfo,
+                  ratio: item.ratio,
+                  resolutionLabel: item.resolutionLabel,
+                  brandProfile,
+                  template: matchedTemplate,
+                }))
             : job.creationMode === "prompt"
               ? buildPromptModeCopyBundle({
                   productName: effectiveInputs.productName,
@@ -374,36 +499,63 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
       const promptModePrompt =
         job.creationMode === "prompt"
           ? job.autoOptimizePrompt
-            ? await optimizeUserImagePrompt({
-                apiKey,
-                textModel: settings.defaultTextModel,
-                apiBaseUrl,
-                apiVersion,
-                apiHeaders,
-                country: job.country,
-                language: job.language,
-                platform: job.platform,
-                category: job.category,
-                productName: effectiveInputs.productName,
-                brandName: job.brandName,
-                sellingPoints: effectiveInputs.sellingPoints,
-                restrictions: effectiveInputs.restrictions,
-                sourceDescription: effectiveInputs.sourceDescription,
-                materialInfo: effectiveInputs.materialInfo,
-                sizeInfo: effectiveInputs.sizeInfo,
-                imageType: item.imageType,
-                ratio: item.ratio,
-                resolutionLabel: item.resolutionLabel,
-                customPrompt: selectedPromptInput,
-                translateToOutputLanguage: job.translatePromptToOutputLanguage,
-                hasSourceImages: sourceImages.length > 0,
-              })
+            ? await (providerType === "openai"
+                ? import("@/lib/openai-provider").then((m) =>
+                    m.optimizeUserImagePrompt({
+                      apiKey,
+                      textModel,
+                      apiBaseUrl,
+                      apiVersion,
+                      apiHeaders,
+                      country: job.country,
+                      language: job.language,
+                      platform: job.platform,
+                      category: job.category,
+                      productName: effectiveInputs.productName,
+                      brandName: job.brandName,
+                      sellingPoints: effectiveInputs.sellingPoints,
+                      restrictions: effectiveInputs.restrictions,
+                      sourceDescription: effectiveInputs.sourceDescription,
+                      materialInfo: effectiveInputs.materialInfo,
+                      sizeInfo: effectiveInputs.sizeInfo,
+                      imageType: item.imageType,
+                      ratio: item.ratio,
+                      resolutionLabel: item.resolutionLabel,
+                      customPrompt: selectedPromptInput,
+                      translateToOutputLanguage: job.translatePromptToOutputLanguage,
+                      hasSourceImages: sourceImages.length > 0,
+                    }),
+                  )
+                : optimizeUserImagePrompt({
+                    apiKey,
+                    textModel,
+                    apiBaseUrl,
+                    apiVersion,
+                    apiHeaders,
+                    country: job.country,
+                    language: job.language,
+                    platform: job.platform,
+                    category: job.category,
+                    productName: effectiveInputs.productName,
+                    brandName: job.brandName,
+                    sellingPoints: effectiveInputs.sellingPoints,
+                    restrictions: effectiveInputs.restrictions,
+                    sourceDescription: effectiveInputs.sourceDescription,
+                    materialInfo: effectiveInputs.materialInfo,
+                    sizeInfo: effectiveInputs.sizeInfo,
+                    imageType: item.imageType,
+                    ratio: item.ratio,
+                    resolutionLabel: item.resolutionLabel,
+                    customPrompt: selectedPromptInput,
+                    translateToOutputLanguage: job.translatePromptToOutputLanguage,
+                    hasSourceImages: sourceImages.length > 0,
+                  }))
             : selectedPromptInput
           : null;
 
       const imageInput = {
         apiKey,
-        imageModel: settings.defaultImageModel,
+        imageModel: providerType === "openai" ? textModel : imageModel,
         apiBaseUrl,
         apiVersion,
         apiHeaders,
@@ -433,22 +585,33 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
         referenceLayout: null,
         referencePosterCopy: null,
         template: matchedTemplate,
+        requestedWidth: item.width,
+        requestedHeight: item.height,
         sourceImages,
         referenceImages,
       };
 
-      const maxGenerationAttempts = shouldRetryForResolutionBucket(settings.defaultImageModel, item.resolutionLabel) ? 3 : 1;
+      const maxGenerationAttempts = shouldRetryForResolutionBucket(imageModel, item.resolutionLabel) ? 3 : 1;
       let generated: Awaited<ReturnType<typeof generateEditedImage>> | null = null;
       let actualDimensions: ReturnType<typeof detectImageDimensions> = null;
       let effectivePromptText = imageInput.customPromptText;
 
       for (let generationAttempt = 1; generationAttempt <= Math.max(maxGenerationAttempts, 2); generationAttempt += 1) {
         generationAttemptUsed = generationAttempt;
-        generated = await generateEditedImage({
-          ...imageInput,
-          customPromptText: effectivePromptText,
-        });
-        actualDimensions = detectImageDimensions(generated.buffer, generated.mimeType);
+        generated = await (providerType === "openai"
+          ? import("@/lib/openai-provider").then((m) =>
+              m.generateEditedImage({
+                ...imageInput,
+                copy: imageInput.copy ?? { optimizedPrompt: "", title: "", subtitle: "", highlights: [], detailAngles: [], painPoints: [], cta: "", posterHeadline: "", posterSubline: "" },
+                customPromptText: effectivePromptText,
+              } as any),
+            )
+          : generateEditedImage({
+              ...imageInput,
+              copy: imageInput.copy!,
+              customPromptText: effectivePromptText,
+            })) as any;
+        actualDimensions = generated ? detectImageDimensions(generated.buffer, generated.mimeType) : null;
 
         if (
           !generated ||
@@ -460,22 +623,42 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
         ) {
           const shouldRunAudit = false;
           if (shouldRunAudit && generated) {
-            visualAudit = await runVisualAudit({
-              apiKey,
-              textModel: settings.defaultTextModel,
-              apiBaseUrl,
-              apiVersion,
-              apiHeaders,
-              mode: structuredAgentMode!,
-              sourceImages,
-              generatedImage: {
-                mimeType: generated.mimeType,
-                buffer: generated.buffer,
-              },
-              marketingStrategy: job.marketingStrategy!,
-              imageStrategy: item.imageStrategy!,
-              promptText: generated.promptText || effectivePromptText || "",
-            }).catch(() => null);
+            visualAudit = await (providerType === "openai"
+              ? import("@/lib/openai-provider").then((m) =>
+                  m.runVisualAudit({
+                    apiKey,
+                    textModel,
+                    apiBaseUrl,
+                    apiVersion,
+                    apiHeaders,
+                    mode: structuredAgentMode!,
+                    sourceImages,
+                    generatedImage: {
+                      mimeType: generated!.mimeType,
+                      buffer: generated!.buffer,
+                    },
+                    marketingStrategy: job.marketingStrategy!,
+                    imageStrategy: item.imageStrategy!,
+                    promptText: generated!.promptText || effectivePromptText || "",
+                  }),
+                )
+              : runVisualAudit({
+                  apiKey,
+                  textModel,
+                  apiBaseUrl,
+                  apiVersion,
+                  apiHeaders,
+                  mode: structuredAgentMode!,
+                  sourceImages,
+                  generatedImage: {
+                    mimeType: generated.mimeType,
+                    buffer: generated.buffer,
+                  },
+                  marketingStrategy: job.marketingStrategy!,
+                  imageStrategy: item.imageStrategy!,
+                  promptText: generated.promptText || effectivePromptText || "",
+                })
+            ).catch(() => null);
 
             if (visualAudit && !visualAudit.passes) {
               if (generationAttempt < 2) {
@@ -548,7 +731,7 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
         itemId: item.id,
         promptText: generated.promptText || copy?.optimizedPrompt || "",
         negativePrompt: copy?.negativePrompt?.trim() || null,
-        copy,
+        copy: copy!,
         generatedAssetId: generatedAsset.id,
         layoutAssetId: null,
         warningMessage: [dimensionWarning, workflowWarning].filter(Boolean).join(" | ") || null,

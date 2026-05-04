@@ -12,7 +12,9 @@ export { APP_NAME };
 const configuredDataDir = process.env.PICTURE_CREATION_DATA_DIR ?? process.env.COMMERCE_STUDIO_DATA_DIR;
 const configuredStorageDir = process.env.PICTURE_CREATION_STORAGE_DIR ?? process.env.COMMERCE_STUDIO_STORAGE_DIR;
 const configuredDatabasePath = process.env.PICTURE_CREATION_DB_PATH ?? process.env.COMMERCE_STUDIO_DB_PATH;
+const isVercelRuntime = Boolean(process.env.VERCEL);
 const localDataDir = path.resolve(path.join(process.cwd(), "data"));
+const vercelDataDir = path.resolve(path.join(os.tmpdir(), "picture-creation", "data"));
 const localAppDataRoot = path.resolve(process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"));
 const dedicatedAppDataRoot = path.join(localAppDataRoot, "Picture-creation");
 const dedicatedDataDir = path.join(dedicatedAppDataRoot, "data");
@@ -27,6 +29,9 @@ function hasExistingData(dirPath: string): boolean {
 function getDefaultDataDir(): string {
   if (configuredDataDir) {
     return configuredDataDir;
+  }
+  if (isVercelRuntime) {
+    return vercelDataDir;
   }
   if (hasExistingData(localDataDir)) {
     return localDataDir;
@@ -60,6 +65,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultApiBaseUrl: "",
   defaultApiVersion: "v1beta",
   defaultApiHeaders: "",
+  defaultProvider: "gemini",
   storageDir: DEFAULT_STORAGE_DIR,
   maxConcurrency: 2,
   defaultUiLanguage: "zh",

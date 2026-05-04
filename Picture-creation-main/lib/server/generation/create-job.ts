@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getSettings } from "@/lib/db";
+import { inferGenerationSemanticsFromSourceCount } from "@/lib/generation-semantics";
 import { buildCreateJobInput } from "@/lib/job-builder";
 import { createAndEnqueueJob } from "@/lib/server/jobs/lifecycle";
 import { writeFileAsset } from "@/lib/storage";
@@ -40,14 +41,17 @@ async function writeUploadedAssets(input: {
 export { GenerationRequestError };
 
 export async function createGenerationJobFromFormData(formData: FormData) {
-  const payload = normalizeCreatePayload(parseCreatePayload(formData.get("payload")));
-  const settings = getSettings();
   const sourceFiles = getFiles(formData, "files");
   const referenceFiles = getFiles(formData, "referenceFiles");
+  const payload = normalizeCreatePayload({
+    ...parseCreatePayload(formData.get("payload")),
+    generationSemantics: inferGenerationSemanticsFromSourceCount(sourceFiles.length),
+  });
+  const settings = getSettings();
   const providerOverride = sanitizeTemporaryProvider(payload.temporaryProvider);
 
   validateCreatePayload(payload, {
-    imageModel: settings.defaultImageModel,
+    imageModel: providerOverride?.imageModel || settings.defaultImageModel,
     sourceFileCount: sourceFiles.length,
     referenceFileCount: referenceFiles.length,
   });

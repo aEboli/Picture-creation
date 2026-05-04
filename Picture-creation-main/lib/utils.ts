@@ -66,9 +66,9 @@ export function isGeminiImageSizeBucket(label: string): boolean {
 
 export function dimensionsForVariant(ratio: string, resolution: string): { width: number; height: number } {
   const [w, h] = parseRatio(ratio);
-  const maxSize = resolutionToPixels(resolution);
-  const maxBase = Math.max(w, h);
-  const scale = maxSize / maxBase;
+  const targetSize = resolutionToPixels(resolution);
+  const baseSide = resolution === "1K" ? Math.min(w, h) : Math.max(w, h);
+  const scale = targetSize / baseSide;
   return {
     width: Math.round(w * scale),
     height: Math.round(h * scale),

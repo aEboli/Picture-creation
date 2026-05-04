@@ -47,6 +47,7 @@ export interface AppSettings {
   defaultApiBaseUrl: string;
   defaultApiVersion: string;
   defaultApiHeaders: string;
+  defaultProvider: string;
   storageDir: string;
   maxConcurrency: number;
   defaultUiLanguage: UiLanguage;
@@ -58,6 +59,12 @@ export interface AppSettings {
   feishuUploadParentType: string;
   feishuFieldMappingJson: string;
   agentSettingsJson: string;
+}
+
+export interface ServiceDrawerSettings extends AppSettings {
+  hasExistingDefaultApiKey: boolean;
+  hasExistingDefaultApiHeaders: boolean;
+  hasExistingFeishuAppSecret: boolean;
 }
 
 export interface AgentProfileSettings {
@@ -97,10 +104,13 @@ export interface FeishuFieldMapping {
 }
 
 export interface ProviderOverride {
+  provider?: string;
   apiKey?: string;
   apiBaseUrl?: string;
   apiVersion?: string;
   apiHeaders?: string;
+  textModel?: string;
+  imageModel?: string;
 }
 
 export interface LocalizedCreativeInputs {
@@ -212,6 +222,8 @@ export interface ProviderDebugInfo {
   requestedHeight?: number;
   actualWidth?: number;
   actualHeight?: number;
+  openAIImageToolModel?: string;
+  openAIImageToolSize?: string;
 }
 
 export interface JobPreviewAsset {

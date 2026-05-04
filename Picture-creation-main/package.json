@@ -2,10 +2,13 @@
   "name": "picture-creation",
   "version": "0.8.0",
   "private": true,
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/start-standalone-server.mjs",
     "typecheck": "tsc --noEmit",
     "package:release": "powershell -ExecutionPolicy Bypass -File .\\scripts\\package-release.ps1 -SkipBuild",
     "package:release:safe": "powershell -ExecutionPolicy Bypass -File .\\scripts\\package-release.ps1 -SkipBuild -SanitizeSecrets",
@@ -18,7 +21,9 @@
   "dependencies": {
     "@google/genai": "latest",
     "fflate": "^0.8.2",
+    "framer-motion": "^12.38.0",
     "next": "latest",
+    "openai": "^6.35.0",
     "react": "latest",
     "react-dom": "latest",
     "sharp": "0.34.5"

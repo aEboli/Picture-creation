@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  AUTO_SOURCE_IMAGE_LIMIT,
   getPlannedRequestCount,
   getRequestImageCount,
   normalizeGenerationSemantics,
@@ -118,7 +119,7 @@ export function normalizeCreatePayload(payload: CreatePayload): CreatePayload {
       platform: "",
       selectedTypes: ["scene"],
       selectedRatios: payload.selectedRatios?.length ? [payload.selectedRatios[0]] : ["1:1"],
-      selectedResolutions: payload.selectedResolutions?.length ? [payload.selectedResolutions[0]] : ["4K"],
+      selectedResolutions: payload.selectedResolutions?.length ? [payload.selectedResolutions[0]] : ["1K"],
       selectedTemplateOverrides: {},
       includeCopyLayout: false,
       variantsPerType: Math.min(Math.max(payload.variantsPerType || 1, 1), 4),
@@ -133,7 +134,7 @@ export function normalizeCreatePayload(payload: CreatePayload): CreatePayload {
       strategyWorkflowMode,
       selectedTypes: normalizeStructuredSelectedTypes(payload),
       selectedRatios: payload.selectedRatios?.length ? [payload.selectedRatios[0]] : ["1:1"],
-      selectedResolutions: payload.selectedResolutions?.length ? [payload.selectedResolutions[0]] : ["4K"],
+      selectedResolutions: payload.selectedResolutions?.length ? [payload.selectedResolutions[0]] : ["1K"],
       includeCopyLayout: false,
       selectedTemplateOverrides: {},
       marketingStrategy: undefined,
@@ -150,7 +151,7 @@ export function normalizeCreatePayload(payload: CreatePayload): CreatePayload {
       platform: "amazon",
       selectedTypes: normalizeStructuredSelectedTypes(payload),
       selectedRatios: payload.selectedRatios?.length ? [payload.selectedRatios[0]] : ["1:1"],
-      selectedResolutions: payload.selectedResolutions?.length ? [payload.selectedResolutions[0]] : ["4K"],
+      selectedResolutions: payload.selectedResolutions?.length ? [payload.selectedResolutions[0]] : ["1K"],
       includeCopyLayout: false,
       selectedTemplateOverrides: {},
       marketingStrategy: undefined,
@@ -166,7 +167,7 @@ export function normalizeCreatePayload(payload: CreatePayload): CreatePayload {
       generationSemantics,
       selectedTypes: normalizeStructuredSelectedTypes(payload),
       selectedRatios: payload.selectedRatios?.length ? [payload.selectedRatios[0]] : ["1:1"],
-      selectedResolutions: payload.selectedResolutions?.length ? [payload.selectedResolutions[0]] : ["4K"],
+      selectedResolutions: payload.selectedResolutions?.length ? [payload.selectedResolutions[0]] : ["1K"],
       marketingStrategy: undefined,
       imageStrategies: undefined,
     };
@@ -261,6 +262,10 @@ export function validateCreatePayload(
     throw new GenerationRequestError("Prompt mode requires at least one text prompt input.");
   }
 
+  if ((creationMode === "standard" || creationMode === "prompt") && input.sourceFileCount > AUTO_SOURCE_IMAGE_LIMIT) {
+    throw new GenerationRequestError(`Source upload supports up to ${AUTO_SOURCE_IMAGE_LIMIT} images.`);
+  }
+
   if (creationMode !== "prompt" && input.sourceFileCount === 0) {
     throw new GenerationRequestError("Missing files.");
   }
@@ -325,10 +330,12 @@ export function sanitizeTemporaryProvider(
   temporaryProvider: ProviderOverride | undefined,
 ): ProviderOverride | undefined {
   if (
+    temporaryProvider?.provider ||
     temporaryProvider?.apiKey ||
     temporaryProvider?.apiBaseUrl ||
-    temporaryProvider?.apiVersion ||
-    temporaryProvider?.apiHeaders
+    temporaryProvider?.apiHeaders ||
+    temporaryProvider?.textModel ||
+    temporaryProvider?.imageModel
   ) {
     return temporaryProvider;
   }

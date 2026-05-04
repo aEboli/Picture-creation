@@ -4,6 +4,12 @@ import { type ChangeEvent, type CSSProperties, type DragEvent, useEffect, useMem
 import { useRouter } from "next/navigation";
 
 import {
+  DEFAULT_BROWSER_API_SETTINGS,
+  readBrowserApiSettings,
+  type BrowserApiSettings,
+  writeBrowserApiSettings,
+} from "@/lib/browser-api-settings";
+import {
   ASPECT_RATIOS,
   COUNTRIES,
   getDefaultCountryForLanguage,
@@ -22,22 +28,24 @@ import {
 } from "@/lib/create-agent-history";
 import { resolveMappedPromptInputs } from "@/lib/create-agent-prompt-mapping";
 import {
-  getMaxReferenceImagesForSelection,
-  getMaxSourceImagesForSelection,
+  AUTO_SOURCE_IMAGE_LIMIT,
   getPlannedRequestCount,
   getRequestImageCount,
   getRequestInputGroupCount,
+  inferGenerationSemanticsFromSourceCount,
 } from "@/lib/generation-semantics";
 import { getMaxImagesPerPromptForModel } from "@/lib/image-model-limits";
 import { getRecommendedCreateDefaults } from "@/lib/recommendations";
 import type {
   BrandRecord,
+  CreationMode,
   GenerationSemantics,
   UiLanguage,
 } from "@/lib/types";
 import { dimensionsForVariant } from "@/lib/utils";
 
 type SubmitBlockReason =
+  | "api-key"
   | "files"
   | "prompt"
   | "reference"
@@ -63,13 +71,15 @@ type CreateAgentMapDetail = {
   promptSuggestions?: string[];
 };
 
+type WorkbenchAreaKey = "assets" | "brief" | "settings" | "submit";
+
 const CREATE_AGENT_DRAFT_CONTEXT_EVENT = "create-agent:draft-context";
 const CREATE_FORM_MAPPING_EVENT = "create-agent:map-to-form";
 const INITIAL_SELECTED_TYPES = ["scene", "detail", "pain-point"];
 const SUITE_SELECTED_TYPES = ["main-image", "lifestyle", "feature-overview", "scene", "material-craft", "size-spec"];
 const AMAZON_A_PLUS_SELECTED_TYPES = ["poster", "feature-overview", "multi-scene", "detail", "size-spec", "culture-value"];
 const INITIAL_SELECTED_RATIOS = ["1:1"];
-const INITIAL_SELECTED_RESOLUTIONS = ["4K"];
+const INITIAL_SELECTED_RESOLUTIONS = ["1K"];
 const UI_SIZE_UNIT = 8;
 const UI_HALF_STEP = UI_SIZE_UNIT / 2;
 const VIEWPORT_TOP_RESERVE = UI_HALF_STEP * 4;
@@ -125,12 +135,19 @@ const INITIAL_PAYLOAD = {
   includeCopyLayout: false,
   temporaryApiKey: "",
   temporaryApiBaseUrl: "",
-  temporaryApiVersion: "",
   temporaryApiHeaders: "",
   referenceExtraPrompt: "",
   referenceNegativePrompt: "",
   referenceLayoutOverrideJson: "",
   referencePosterCopyOverrideJson: "",
+};
+
+const CREATE_MODE_CLASS_NAMES: Record<CreationMode, string> = {
+  standard: "is-standard-mode",
+  suite: "is-suite-mode",
+  "amazon-a-plus": "is-amazon-mode",
+  prompt: "is-prompt-mode",
+  "reference-remix": "is-reference-mode",
 };
 
 function copyFor(language: UiLanguage): Record<string, string> {
@@ -149,11 +166,15 @@ function copyFor(language: UiLanguage): Record<string, string> {
       dropToReplace: "拖拽图片到这里即可替换",
       dropToUpload: "或将图片拖到这里上传",
       filesRequired: "请至少上传 1 张图片。",
-      generationSemanticsBatch: "批量模板",
-      generationSemanticsJoint: "多图联合",
-      generationSemanticsLabel: "生成方式",
       generateError: "提交失败。请检查表单和 API 配置后重试。",
-      hint: "在原图面板中切换多图联合生成和批量模板任务。",
+      apiKeyRequired: "请先填写浏览器 API Key。",
+      apiSettingsTitle: "浏览器 API",
+      apiKey: "API Key",
+      apiBaseUrl: "Responses URL / 中转地址",
+      apiTextModel: "文本模型",
+      apiImageModel: "图像模型",
+      apiHeaders: "请求头 JSON",
+      hint: "上传 1 张时按单图处理，上传多张时自动按多张图输入处理。",
       imageCounter: "{current}/{total}",
       imageTypes: "图片类型",
       leavePrompt: "当前草稿尚未完成。离开此页后，需要重新选择已上传的图片。仍要离开吗？",
@@ -184,6 +205,8 @@ function copyFor(language: UiLanguage): Record<string, string> {
       sellingPoints: "卖点",
       sourceDescription: "补充说明",
       sourceImages: "图片原图",
+      sourceUploadMultiple: "多张图上传",
+      sourceUploadSingle: "单张图片上传",
       standardMode: "标准模式",
       submit: "提交任务",
       submitSuccessTitle: "任务创建成功",
@@ -210,11 +233,15 @@ function copyFor(language: UiLanguage): Record<string, string> {
     dropToReplace: "Drag images here to replace",
     dropToUpload: "Or drag images here to upload",
     filesRequired: "Upload at least one image.",
-    generationSemanticsBatch: "Batch template",
-    generationSemanticsJoint: "Joint input",
-    generationSemanticsLabel: "Generation mode",
     generateError: "Submission failed. Check the form and API configuration, then try again.",
-    hint: "Switch between joint multi-image generation and batch template runs from the source panel.",
+    apiKeyRequired: "Enter a browser API key first.",
+    apiSettingsTitle: "Browser API",
+    apiKey: "API key",
+    apiBaseUrl: "Responses URL / relay URL",
+    apiTextModel: "Text model",
+    apiImageModel: "Image model",
+    apiHeaders: "Headers JSON",
+    hint: "Upload one image for a single-image run, or upload multiple images for a multi-image input.",
     imageCounter: "{current}/{total}",
     imageTypes: "Image types",
     livePreview: "Live preview",
@@ -244,6 +271,8 @@ function copyFor(language: UiLanguage): Record<string, string> {
     sellingPoints: "Selling points",
     sourceDescription: "Additional notes",
     sourceImages: "Source images",
+    sourceUploadMultiple: "Multi-image upload",
+    sourceUploadSingle: "Single-image upload",
     standardMode: "Standard",
     submit: "Submit task",
     submitSuccessTitle: "Task created successfully",
@@ -310,7 +339,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const commerceMaterialInfoLabel = language === "zh" ? "材质（选填）" : "Material (optional)";
   const commerceSizeInfoLabel = language === "zh" ? "尺寸规格（选填）" : "Size / specs (optional)";
   const commerceBrandNameLabel = language === "zh" ? "品牌名（选填）" : "Brand name (optional)";
-  const structuredGroupsLabel = language === "zh" ? "套图组数" : "Set groups";
   const [isPending, startTransition] = useTransition();
   const [files, setFiles] = useState<File[]>([]);
   const [referenceFiles, setReferenceFiles] = useState<File[]>([]);
@@ -327,11 +355,174 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const [promptMarketOverridesEnabled, setPromptMarketOverridesEnabled] = useState(false);
   const [brands, setBrands] = useState<BrandRecord[]>([]);
   const [payload, setPayload] = useState(INITIAL_PAYLOAD);
-  const isStructuredCommerceMode = payload.creationMode === "standard" || payload.creationMode === "suite" || payload.creationMode === "amazon-a-plus";
+  const isStandardMode = payload.creationMode === "standard";
+  const isSuiteMode = payload.creationMode === "suite";
+  const isAmazonMode = payload.creationMode === "amazon-a-plus";
+  const isPromptMode = payload.creationMode === "prompt";
+  const isReferenceMode = payload.creationMode === "reference-remix";
+  const isStructuredCommerceMode = isStandardMode || isSuiteMode || isAmazonMode;
+  const activeModeClassName = CREATE_MODE_CLASS_NAMES[payload.creationMode];
+  const activeModeProfile = useMemo(() => {
+    const profiles: Record<
+      CreationMode,
+      {
+        assetTitle: string;
+        eyebrow: string;
+        fieldTitle: string;
+        marketTitle: string;
+        quantityTitle: string;
+        resolutionTitle: string;
+        ratioTitle: string;
+        title: string;
+        typeTitle: string;
+      }
+    > =
+      language === "zh"
+        ? {
+            standard: {
+              assetTitle: "商品原图",
+              eyebrow: "单品精修",
+              fieldTitle: "单图信息",
+              marketTitle: "投放市场",
+              quantityTitle: "生成组数",
+              resolutionTitle: "输出清晰度",
+              ratioTitle: "构图比例",
+              title: "标准模式工作台",
+              typeTitle: "成图片型",
+            },
+            suite: {
+              assetTitle: "套图主商品",
+              eyebrow: "成套策划",
+              fieldTitle: "套图企划",
+              marketTitle: "套图市场",
+              quantityTitle: "套图组数",
+              resolutionTitle: "整套清晰度",
+              ratioTitle: "套图比例",
+              title: "套图模式工作台",
+              typeTitle: "套图模块",
+            },
+            "amazon-a-plus": {
+              assetTitle: "A+ 主商品",
+              eyebrow: "Amazon 内容",
+              fieldTitle: "A+ 模块策划",
+              marketTitle: "Amazon 市场",
+              quantityTitle: "模块组数",
+              resolutionTitle: "模块清晰度",
+              ratioTitle: "模块比例",
+              title: "亚马逊 A+ 工作台",
+              typeTitle: "A+ 模块",
+            },
+            prompt: {
+              assetTitle: "参考素材",
+              eyebrow: "文本直出",
+              fieldTitle: "提示词编排",
+              marketTitle: "提示词市场",
+              quantityTitle: "提示词数量",
+              resolutionTitle: "输出清晰度",
+              ratioTitle: "画面比例",
+              title: "提示词模式工作台",
+              typeTitle: "提示词任务",
+            },
+            "reference-remix": {
+              assetTitle: "产品原图",
+              eyebrow: "结构复刻",
+              fieldTitle: "复刻控制台",
+              marketTitle: "复刻素材",
+              quantityTitle: "复刻张数",
+              resolutionTitle: "复刻清晰度",
+              ratioTitle: "复刻比例",
+              title: "参考图复刻工作台",
+              typeTitle: "复刻目标",
+            },
+          }
+        : {
+            standard: {
+              assetTitle: "Product source",
+              eyebrow: "Single product",
+              fieldTitle: "Image brief",
+              marketTitle: "Market",
+              quantityTitle: "Output sets",
+              resolutionTitle: "Output clarity",
+              ratioTitle: "Composition",
+              title: "Standard workbench",
+              typeTitle: "Image types",
+            },
+            suite: {
+              assetTitle: "Suite hero product",
+              eyebrow: "Set planning",
+              fieldTitle: "Suite brief",
+              marketTitle: "Suite market",
+              quantityTitle: "Set groups",
+              resolutionTitle: "Suite clarity",
+              ratioTitle: "Suite ratio",
+              title: "Image set workbench",
+              typeTitle: "Suite modules",
+            },
+            "amazon-a-plus": {
+              assetTitle: "A+ hero product",
+              eyebrow: "Amazon content",
+              fieldTitle: "A+ module brief",
+              marketTitle: "Amazon market",
+              quantityTitle: "Module groups",
+              resolutionTitle: "Module clarity",
+              ratioTitle: "Module ratio",
+              title: "Amazon A+ workbench",
+              typeTitle: "A+ modules",
+            },
+            prompt: {
+              assetTitle: "Reference assets",
+              eyebrow: "Text first",
+              fieldTitle: "Prompt board",
+              marketTitle: "Prompt market",
+              quantityTitle: "Prompt count",
+              resolutionTitle: "Output clarity",
+              ratioTitle: "Frame ratio",
+              title: "Prompt workbench",
+              typeTitle: "Prompt tasks",
+            },
+            "reference-remix": {
+              assetTitle: "Product source",
+              eyebrow: "Structure remake",
+              fieldTitle: "Remake console",
+              marketTitle: "Remake assets",
+              quantityTitle: "Remake outputs",
+              resolutionTitle: "Remake clarity",
+              ratioTitle: "Remake ratio",
+              title: "Reference remake workbench",
+              typeTitle: "Remake goal",
+            },
+          };
+
+    return profiles[payload.creationMode];
+  }, [language, payload.creationMode]);
+  const structuredFieldLabels = isSuiteMode
+    ? {
+        brandName: language === "zh" ? "系列品牌（选填）" : "Series brand (optional)",
+        materialInfo: language === "zh" ? "材质体系（选填）" : "Material system (optional)",
+        productName: language === "zh" ? "套图名（必填）" : "Set name (required)",
+        sellingPoints: language === "zh" ? "套图卖点（选填）" : "Set selling points (optional)",
+        sizeInfo: language === "zh" ? "规格结构（选填）" : "Spec structure (optional)",
+      }
+    : isAmazonMode
+      ? {
+          brandName: language === "zh" ? "品牌 / 店铺（选填）" : "Brand / store (optional)",
+          materialInfo: language === "zh" ? "产品证据（选填）" : "Product proof (optional)",
+          productName: language === "zh" ? "A+ 模块名（必填）" : "A+ module name (required)",
+          sellingPoints: language === "zh" ? "核心转化信息（选填）" : "Conversion message (optional)",
+          sizeInfo: language === "zh" ? "参数与对比（选填）" : "Specs and comparison (optional)",
+        }
+      : {
+          brandName: commerceBrandNameLabel,
+          materialInfo: commerceMaterialInfoLabel,
+          productName: commerceProductNameLabel,
+          sellingPoints: commerceSellingPointsLabel,
+          sizeInfo: commerceSizeInfoLabel,
+        };
   const [variantsInput, setVariantsInput] = useState(String(INITIAL_PAYLOAD.variantsPerType));
   const [draftReady, setDraftReady] = useState(false);
   const [agentDraftId, setAgentDraftId] = useState(() => createCreateDraftId());
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null);
+  const [browserApiSettings, setBrowserApiSettings] = useState<BrowserApiSettings>(DEFAULT_BROWSER_API_SETTINGS);
   const [submitBlockedFeedback, setSubmitBlockedFeedback] = useState(false);
   const [isSourceDropActive, setIsSourceDropActive] = useState(false);
   const [isReferenceDropActive, setIsReferenceDropActive] = useState(false);
@@ -341,6 +532,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const referenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const referenceDropDepthRef = useRef(0);
   const productNameInputRef = useRef<HTMLInputElement | null>(null);
+  const browserApiKeyInputRef = useRef<HTMLInputElement | null>(null);
   const promptInputRefs = useRef<Array<HTMLTextAreaElement | null>>([]);
   const variantsInputRef = useRef<HTMLInputElement | null>(null);
   const submitBlockedTimerRef = useRef<number | null>(null);
@@ -349,64 +541,30 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     cramped: false,
     availableHeight: 0,
   });
+  const [activeWorkbenchArea, setActiveWorkbenchArea] = useState<WorkbenchAreaKey>("assets");
 
-  const currentGenerationSemantics = payload.generationSemantics;
+  const effectiveGenerationSemantics = inferGenerationSemanticsFromSourceCount(files.length);
   const currentReferenceImageCount = payload.creationMode === "reference-remix" ? referenceFiles.length : 0;
   const isSingleSourceMode =
     payload.creationMode === "suite" || payload.creationMode === "amazon-a-plus" || payload.creationMode === "reference-remix";
   const isSingleReferenceMode = payload.creationMode === "reference-remix";
-  const maxSourceImagesForSelection = useMemo(
-    () =>
-      isSingleSourceMode
-        ? 1
-        : getMaxSourceImagesForSelection(defaultImageModel, {
-            generationSemantics: currentGenerationSemantics,
-            referenceImageCount: currentReferenceImageCount,
-          }),
-    [currentGenerationSemantics, currentReferenceImageCount, defaultImageModel, isSingleSourceMode],
-  );
-  const maxReferenceImagesForSelection = useMemo(
-    () =>
-      isSingleReferenceMode
-        ? 1
-        : payload.creationMode === "reference-remix"
-          ? getMaxReferenceImagesForSelection(defaultImageModel, {
-              generationSemantics: currentGenerationSemantics,
-              sourceImageCount: files.length,
-            })
-          : 0,
-    [currentGenerationSemantics, defaultImageModel, files.length, isSingleReferenceMode, payload.creationMode],
-  );
+  const maxReferenceImagesForSelection = isSingleReferenceMode ? 1 : 0;
   const currentRequestImageCount = useMemo(
     () =>
       getRequestImageCount({
         creationMode: payload.creationMode,
-        generationSemantics: currentGenerationSemantics,
+        generationSemantics: effectiveGenerationSemantics,
         sourceImageCount: files.length,
         referenceImageCount: currentReferenceImageCount,
       }),
-    [currentGenerationSemantics, currentReferenceImageCount, files.length, payload.creationMode],
+    [effectiveGenerationSemantics, currentReferenceImageCount, files.length, payload.creationMode],
   );
 
   function buildSourceLimitMessage(limit: number) {
-    if (limit <= 0) {
-      return language === "zh" ? "多图联合模式已没有原图名额了，请先减少参考图。" : "No source-image slots are left for joint generation. Reduce reference images first.";
-    }
-
-    return language === "zh" ? `当前生成方式最多支持 ${limit} 张原图。` : `The current generation mode supports up to ${limit} source images.`;
+    return language === "zh" ? `当前最多支持上传 ${limit} 张原图。` : `You can upload up to ${limit} source images.`;
   }
 
   function buildReferenceLimitMessage(limit: number) {
-    if (currentGenerationSemantics === "joint") {
-      return limit <= 0
-        ? language === "zh"
-          ? "参考图名额已满，请先减少原图。"
-          : "No reference-image slots are left. Reduce source images first."
-        : language === "zh"
-          ? `你还可以再添加 ${limit} 张参考图。`
-          : `You can add up to ${limit} more reference images.`;
-    }
-
     return language === "zh" ? `参考图复刻模式每次请求最多支持 ${limit} 张参考图。` : `Reference remake supports up to ${limit} reference images per request.`;
   }
 
@@ -434,9 +592,21 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     return parsedVariantsPerType === null ? text.quantityRangeError : "";
   }, [parsedVariantsPerType, payload.creationMode, text.quantityRangeError, text.quantityRequired, variantsInput]);
 
+  function patchBrowserApiSettings(patch: Partial<BrowserApiSettings>) {
+    setBrowserApiSettings((current) => {
+      const next = { ...current, ...patch, provider: "openai" as const };
+      writeBrowserApiSettings(next);
+      return next;
+    });
+  }
+
   const submitBlockReason = useMemo<SubmitBlockReason | null>(() => {
     if (isPending) {
       return null;
+    }
+
+    if (!browserApiSettings.apiKey.trim()) {
+      return "api-key";
     }
 
     if (payload.creationMode !== "prompt" && !files.length) {
@@ -481,6 +651,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
 
     return null;
   }, [
+    browserApiSettings.apiKey,
     files.length,
     isPending,
     currentRequestImageCount,
@@ -493,6 +664,10 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     referenceFiles.length,
   ]);
   function getSubmitBlockedMessage(reason: SubmitBlockReason) {
+    if (reason === "api-key") {
+      return text.apiKeyRequired;
+    }
+
     if (reason === "files") {
       return text.filesRequired;
     }
@@ -537,6 +712,10 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   }
   const submitBlockedMessage = submitBlockReason ? getSubmitBlockedMessage(submitBlockReason) : "";
   const isSubmitBlocked = Boolean(submitBlockReason);
+
+  useEffect(() => {
+    setBrowserApiSettings(readBrowserApiSettings());
+  }, []);
 
   useEffect(() => {
     try {
@@ -971,10 +1150,10 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   }
 
   function applySourceFiles(nextFiles: File[]) {
-    const sourceLimit = isSingleSourceMode ? 1 : maxSourceImagesForSelection;
-    const limitedFiles = Number.isFinite(sourceLimit) ? nextFiles.slice(0, sourceLimit) : nextFiles;
+    const sourceLimit = isSingleSourceMode ? 1 : AUTO_SOURCE_IMAGE_LIMIT;
+    const limitedFiles = nextFiles.slice(0, sourceLimit);
     if (limitedFiles.length < nextFiles.length) {
-      setErrorMessage(buildSourceLimitMessage(Number.isFinite(sourceLimit) ? sourceLimit : nextFiles.length));
+      setErrorMessage(buildSourceLimitMessage(sourceLimit));
     } else {
       setErrorMessage("");
     }
@@ -1126,6 +1305,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       "payload",
       JSON.stringify({
         ...payload,
+        generationSemantics: effectiveGenerationSemantics,
         sku: "",
         promptInputs: payload.creationMode === "prompt" ? normalizedPromptInputs : undefined,
         customNegativePrompt: payload.creationMode === "prompt" ? undefined : (payload as { customNegativePrompt?: string }).customNegativePrompt,
@@ -1147,10 +1327,12 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
         referenceLayoutOverride: payload.creationMode === "reference-remix" ? null : referenceLayoutOverride,
         referencePosterCopyOverride: payload.creationMode === "reference-remix" ? null : referencePosterCopyOverride,
         temporaryProvider: {
-          apiKey: payload.temporaryApiKey,
-          apiBaseUrl: payload.temporaryApiBaseUrl,
-          apiVersion: payload.temporaryApiVersion,
-          apiHeaders: payload.temporaryApiHeaders,
+          provider: browserApiSettings.provider,
+          apiKey: browserApiSettings.apiKey,
+          apiBaseUrl: browserApiSettings.apiBaseUrl,
+          apiHeaders: browserApiSettings.apiHeaders,
+          textModel: browserApiSettings.textModel,
+          imageModel: browserApiSettings.imageModel,
         },
         uiLanguage: language,
       }),
@@ -1226,31 +1408,54 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   }
 
   function focusBlockedSubmitTarget(reason: SubmitBlockReason) {
+    if (reason === "api-key") {
+      setActiveWorkbenchArea("settings");
+      window.setTimeout(() => {
+        browserApiKeyInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        browserApiKeyInputRef.current?.focus();
+        browserApiKeyInputRef.current?.select();
+      }, 0);
+      return;
+    }
+
     if (reason === "files") {
-      sourceFileInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      sourceFileInputRef.current?.focus();
+      setActiveWorkbenchArea("assets");
+      window.setTimeout(() => {
+        sourceFileInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        sourceFileInputRef.current?.focus();
+      }, 0);
       return;
     }
 
     if (reason === "reference") {
-      referenceFileInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      referenceFileInputRef.current?.focus();
+      setActiveWorkbenchArea("assets");
+      window.setTimeout(() => {
+        referenceFileInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        referenceFileInputRef.current?.focus();
+      }, 0);
       return;
     }
 
     if (reason === "suite-source-limit" || reason === "amazon-a-plus-source-limit" || reason === "reference-source-limit") {
-      sourceFileInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      sourceFileInputRef.current?.focus();
+      setActiveWorkbenchArea("assets");
+      window.setTimeout(() => {
+        sourceFileInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        sourceFileInputRef.current?.focus();
+      }, 0);
       return;
     }
 
     if (reason === "reference-reference-limit") {
-      referenceFileInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      referenceFileInputRef.current?.focus();
+      setActiveWorkbenchArea("assets");
+      window.setTimeout(() => {
+        referenceFileInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        referenceFileInputRef.current?.focus();
+      }, 0);
       return;
     }
 
     if (reason === "variants") {
+      setActiveWorkbenchArea("submit");
       window.setTimeout(() => {
         variantsInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
         variantsInputRef.current?.focus();
@@ -1259,6 +1464,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       return;
     }
 
+    setActiveWorkbenchArea("brief");
     window.setTimeout(() => {
       if (reason === "prompt") {
         promptInputRefs.current[0]?.focus();
@@ -1342,8 +1548,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
           ...(hasStructuredSizeInfo && !selectedTypes.includes("size-spec") ? ["size-spec"] : []),
         ];
   const effectiveTypeCount = effectiveSelectedTypes.length;
-  const generationSemanticsLabel =
-    currentGenerationSemantics === "joint" ? text.generationSemanticsJoint : text.generationSemanticsBatch;
+  const sourceUploadModeLabel = files.length > 1 ? text.sourceUploadMultiple : text.sourceUploadSingle;
   const joinSummaryParts = (parts: Array<string | null | undefined>) =>
     parts
       .map((part) => part?.trim())
@@ -1351,14 +1556,14 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       .join(" / ");
   const marketSummary =
     payload.creationMode === "reference-remix"
-      ? joinSummaryParts([generationSemanticsLabel, selectedRatios[0], selectedResolutions[0], parsedVariantsPerType === null ? text.quantityPending : `${parsedVariantsPerType}`])
+      ? joinSummaryParts([sourceUploadModeLabel, selectedRatios[0], selectedResolutions[0], parsedVariantsPerType === null ? text.quantityPending : `${parsedVariantsPerType}`])
       : payload.creationMode === "prompt"
         ? joinSummaryParts([
           payload.country ? labelFor(payload.country, language, COUNTRIES) : "",
           payload.platform ? labelFor(payload.platform, language, PLATFORMS) : "",
           payload.language ? labelFor(payload.language, language, OUTPUT_LANGUAGES) : "",
           text.promptMode,
-          generationSemanticsLabel,
+          files.length ? sourceUploadModeLabel : "",
           selectedRatios[0],
           selectedResolutions[0],
         ])
@@ -1368,7 +1573,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
           payload.language ? labelFor(payload.language, language, OUTPUT_LANGUAGES) : "",
           payload.platform ? labelFor(payload.platform, language, PLATFORMS) : "",
           suiteModeLabel,
-          generationSemanticsLabel,
+          sourceUploadModeLabel,
           effectiveTypeCount ? `${effectiveTypeCount} ${text.typesUnit}` : "",
           selectedRatios[0],
           selectedResolutions[0],
@@ -1378,7 +1583,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
           payload.country ? labelFor(payload.country, language, COUNTRIES) : "",
           payload.language ? labelFor(payload.language, language, OUTPUT_LANGUAGES) : "",
           amazonAPlusModeLabel,
-          generationSemanticsLabel,
+          sourceUploadModeLabel,
           effectiveTypeCount ? `${effectiveTypeCount} ${text.typesUnit}` : "",
           selectedRatios[0],
           selectedResolutions[0],
@@ -1387,14 +1592,14 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
           payload.country ? labelFor(payload.country, language, COUNTRIES) : "",
           payload.platform ? labelFor(payload.platform, language, PLATFORMS) : "",
           text.standardMode,
-          generationSemanticsLabel,
+          sourceUploadModeLabel,
           effectiveTypeCount ? `${effectiveTypeCount} ${text.typesUnit}` : "",
           selectedRatios[0],
           selectedResolutions[0],
         ]);
   const requestInputCount = getRequestInputGroupCount({
     creationMode: payload.creationMode,
-    generationSemantics: currentGenerationSemantics,
+    generationSemantics: effectiveGenerationSemantics,
     sourceImageCount: files.length,
   });
   const promptRequestCount =
@@ -1417,16 +1622,32 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
         ? language === "zh"
           ? "文生图输入"
           : "text-to-image input"
-        : language === "zh"
-          ? "联合参考输入"
-          : "joint reference input"
-      : currentGenerationSemantics === "joint"
+        : files.length > 1
+          ? language === "zh"
+            ? "多张图输入"
+            : "multi-image input"
+          : language === "zh"
+            ? "单张参考图"
+            : "single reference image"
+      : effectiveGenerationSemantics === "joint"
         ? language === "zh"
-          ? `${requestInputCount} 个多图联合输入组`
-          : `${requestInputCount} joint input group`
+          ? `${requestInputCount} 个多张图输入组`
+          : `${requestInputCount} multi-image input group`
         : language === "zh"
           ? `${requestInputCount} 张原图`
           : `${requestInputCount} source image`;
+  const bannerInputMetricLabel =
+    language === "zh"
+      ? isPromptMode
+        ? "提示词"
+        : isReferenceMode
+          ? "复刻输入"
+          : "输入组"
+      : isPromptMode
+        ? "Prompts"
+        : isReferenceMode
+          ? "Remake input"
+          : "Input groups";
   const formulaDisplay =
     payload.creationMode === "prompt"
       ? language === "zh"
@@ -1435,6 +1656,48 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       : language === "zh"
         ? `${requestInputLabel} × ${effectiveTypeCount} 个类型 × ${parsedVariantsPerType ?? "-"} 组`
         : `${requestInputLabel} x ${effectiveTypeCount} type x ${parsedVariantsPerType ?? "-"} groups`;
+  const workbenchAreas = useMemo(
+    () =>
+      language === "zh"
+        ? [
+            {
+              key: "assets" as const,
+              label: "素材区",
+              summary: isReferenceMode ? `${files.length}+${referenceFiles.length}` : `${files.length}`,
+            },
+            { key: "brief" as const, label: "内容区", summary: activeModeProfile.fieldTitle },
+            {
+              key: "settings" as const,
+              label: "参数区",
+              summary: `${selectedRatios[0] ?? "1:1"} / ${selectedResolutions[0] ?? "1K"}`,
+            },
+            { key: "submit" as const, label: "生成区", summary: requestCountValue },
+          ]
+        : [
+            {
+              key: "assets" as const,
+              label: "Assets",
+              summary: isReferenceMode ? `${files.length}+${referenceFiles.length}` : `${files.length}`,
+            },
+            { key: "brief" as const, label: "Brief", summary: activeModeProfile.fieldTitle },
+            {
+              key: "settings" as const,
+              label: "Settings",
+              summary: `${selectedRatios[0] ?? "1:1"} / ${selectedResolutions[0] ?? "1K"}`,
+            },
+            { key: "submit" as const, label: "Generate", summary: requestCountValue },
+          ],
+    [
+      activeModeProfile.fieldTitle,
+      files.length,
+      isReferenceMode,
+      language,
+      referenceFiles.length,
+      requestCountValue,
+      selectedRatios,
+      selectedResolutions,
+    ],
+  );
   useEffect(() => {
     function handleCreateAgentMap(event: Event) {
       const mapped = (event as CustomEvent<CreateAgentMapDetail>).detail;
@@ -1476,7 +1739,12 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   }, [requestCount]);
   const currentPlatformLabel =
     payload.creationMode === "amazon-a-plus" ? "Amazon" : labelFor(payload.platform, language, PLATFORMS);
-  const selectedResolutionLabel = labelFor(selectedResolutions[0] ?? "4K", language, RESOLUTIONS);
+  const modeSignalValue = isReferenceMode
+    ? `${files.length}+${referenceFiles.length}`
+    : isPromptMode
+      ? String(normalizedPromptInputs.length)
+      : currentPlatformLabel || "--";
+  const selectedResolutionLabel = labelFor(selectedResolutions[0] ?? "1K", language, RESOLUTIONS);
   const resolutionDetailMap = useMemo(
     () =>
       Object.fromEntries(
@@ -1487,9 +1755,10 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       ) as Record<string, string>,
     [resolutionOptions, selectedRatios],
   );
-  const selectedResolutionDetail = resolutionDetailMap[selectedResolutions[0] ?? "4K"] ?? "";
+  const selectedResolutionDetail = resolutionDetailMap[selectedResolutions[0] ?? "1K"] ?? "";
   const createWorkspaceClassName = [
     "create-workspace",
+    activeModeClassName,
     viewportLayout.compact ? "is-compact-viewport" : "",
     viewportLayout.cramped ? "is-cramped-viewport" : "",
   ]
@@ -1502,10 +1771,11 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const longRows = viewportLayout.compact ? 2 : 3;
   const mediumRows = 2;
   function activateReferenceRemixMode() {
+    setActiveWorkbenchArea("assets");
     setPromptMarketOverridesEnabled(false);
     setSelectedTypes(["scene"]);
     setSelectedRatios(["1:1"]);
-    setSelectedResolutions(["4K"]);
+    setSelectedResolutions(["1K"]);
     setVariantsInput("1");
     setPayload((current) => ({
       ...current,
@@ -1522,6 +1792,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   }
 
   function activateStructuredMode(nextMode: "standard" | "suite" | "amazon-a-plus") {
+    setActiveWorkbenchArea("assets");
     const nextSelectedTypes =
       nextMode === "suite"
         ? SUITE_SELECTED_TYPES
@@ -1540,71 +1811,49 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     }));
   }
 
-  const generationSemanticsSelector = (
-    <div
-      aria-label={text.generationSemanticsLabel}
-      className="create-generation-semantics-toggle"
-      role="radiogroup"
-    >
-      <label className={currentGenerationSemantics === "joint" ? "create-generation-semantics-option is-active" : "create-generation-semantics-option"}>
-        <input
-          checked={currentGenerationSemantics === "joint"}
-          name="generation-semantics"
-          onChange={() => setPayload((current) => ({ ...current, generationSemantics: "joint" }))}
-          type="radio"
-        />
-        <span>{text.generationSemanticsJoint}</span>
-      </label>
-      <label className={currentGenerationSemantics === "batch" ? "create-generation-semantics-option is-active" : "create-generation-semantics-option"}>
-        <input
-          checked={currentGenerationSemantics === "batch"}
-          name="generation-semantics"
-          onChange={() => setPayload((current) => ({ ...current, generationSemantics: "batch" }))}
-          type="radio"
-        />
-        <span>{text.generationSemanticsBatch}</span>
-      </label>
-    </div>
-  );
   const creationModeSelector = (
     <div
       aria-label={language === "zh" ? "模式选择" : "Mode selection"}
       className="create-header-mode-fieldset"
       role="radiogroup"
     >
-      <div className="chip-grid small creation-mode-grid">
-        <label className={payload.creationMode === "standard" ? "chip is-active" : "chip"}>
+      <div className="creation-mode-grid">
+        <label className={payload.creationMode === "standard" ? "create-mode-option is-standard is-active" : "create-mode-option is-standard"}>
           <input
             checked={payload.creationMode === "standard"}
             name="creation-mode"
             onChange={() => activateStructuredMode("standard")}
             type="radio"
           />
-          <span>{text.standardMode}</span>
+          <span className="create-mode-option-index">01</span>
+          <strong>{text.standardMode}</strong>
         </label>
-        <label className={payload.creationMode === "suite" ? "chip is-active" : "chip"}>
+        <label className={payload.creationMode === "suite" ? "create-mode-option is-suite is-active" : "create-mode-option is-suite"}>
           <input
             checked={payload.creationMode === "suite"}
             name="creation-mode"
             onChange={() => activateStructuredMode("suite")}
             type="radio"
           />
-          <span>{suiteModeLabel}</span>
+          <span className="create-mode-option-index">02</span>
+          <strong>{suiteModeLabel}</strong>
         </label>
-        <label className={payload.creationMode === "amazon-a-plus" ? "chip is-active" : "chip"}>
+        <label className={payload.creationMode === "amazon-a-plus" ? "create-mode-option is-amazon is-active" : "create-mode-option is-amazon"}>
           <input
             checked={payload.creationMode === "amazon-a-plus"}
             name="creation-mode"
             onChange={() => activateStructuredMode("amazon-a-plus")}
             type="radio"
           />
-          <span>{amazonAPlusModeLabel}</span>
+          <span className="create-mode-option-index">03</span>
+          <strong>{amazonAPlusModeLabel}</strong>
         </label>
-        <label className={payload.creationMode === "prompt" ? "chip is-active" : "chip"}>
+        <label className={payload.creationMode === "prompt" ? "create-mode-option is-prompt is-active" : "create-mode-option is-prompt"}>
           <input
             checked={payload.creationMode === "prompt"}
             name="creation-mode"
             onChange={() => {
+              setActiveWorkbenchArea("brief");
               setPromptMarketOverridesEnabled(false);
               setPayload((current) => ({
                 ...current,
@@ -1615,16 +1864,18 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
             }}
             type="radio"
           />
-          <span>{text.promptMode}</span>
+          <span className="create-mode-option-index">04</span>
+          <strong>{text.promptMode}</strong>
         </label>
-        <label className={payload.creationMode === "reference-remix" ? "chip is-active" : "chip"}>
+        <label className={payload.creationMode === "reference-remix" ? "create-mode-option is-reference is-active" : "create-mode-option is-reference"}>
           <input
             checked={payload.creationMode === "reference-remix"}
             name="creation-mode"
             onChange={activateReferenceRemixMode}
             type="radio"
           />
-          <span>{text.referenceMode}</span>
+          <span className="create-mode-option-index">05</span>
+          <strong>{text.referenceMode}</strong>
         </label>
       </div>
     </div>
@@ -1632,358 +1883,600 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   return (
     <>
       <form className={createWorkspaceClassName} onSubmit={handleSubmit} ref={formRef} style={createWorkspaceStyle}>
-        <aside className="create-sidebar">
-          <div className="create-sidebar-sticky">
-            <section className="panel create-panel create-source-panel">
-              <div className="split-header compact">
-                <div>
-                  <h2>{text.sourceImages}</h2>
-                </div>
-                <div className="create-panel-actions">
-                  {generationSemanticsSelector}
-                  <button className="preview-stage-upload-button" onClick={openSourceFilePicker} type="button">
-                    {text.chooseFiles}
-                  </button>
-                  {files.length ? (
-                    <span className="preview-stage-counter">
-                      {formatImageCounter(language, previewIndex + 1, files.length)}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <input
-                ref={sourceFileInputRef}
-                multiple={!isSingleSourceMode}
-                accept="image/*"
-                className="create-file-input-hidden"
-                onChange={handleSourceFileChange}
-                type="file"
-              />
-              {currentPreviewUrl ? (
-                <>
-                  <div
-                    className={isSourceDropActive ? "preview-stage is-drop-active" : "preview-stage"}
-                    onDragEnter={handleSourceDragEnter}
-                    onDragLeave={handleSourceDragLeave}
-                    onDragOver={handleSourceDragOver}
-                    onDrop={handleSourceDrop}
-                  >
-                    <img
-                      alt={files[previewIndex]?.name || text.livePreview}
-                      className="preview-stage-image"
-                      decoding="async"
-                      src={currentPreviewUrl}
-                    />
-                    {previewUrls.length > 1 ? (
-                      <>
-                        <button aria-label={text.previousImage} className="preview-arrow preview-arrow-left" onClick={showPreviousPreview} type="button">
-                          {"<"}
-                        </button>
-                        <button aria-label={text.nextImage} className="preview-arrow preview-arrow-right" onClick={showNextPreview} type="button">
-                          {">"}
-                        </button>
-                      </>
-                    ) : null}
-                  </div>
-                  {previewUrls.length > 1 ? (
-                    <div className="preview-thumb-row" role="tablist" aria-label={text.livePreview}>
-                      {previewUrls.map((url, index) => (
-                        <button
-                          aria-label={files[index]?.name || `${text.livePreview} ${index + 1}`}
-                          className={index === previewIndex ? "preview-thumb is-active" : "preview-thumb"}
-                          key={`${files[index]?.name || "image"}-${index}`}
-                          onClick={() => setPreviewIndex(index)}
-                          type="button"
-                        >
-                          <img alt={files[index]?.name || text.livePreview} decoding="async" loading="lazy" src={url} />
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-                </>
-              ) : (
-                <div
-                  className={isSourceDropActive ? "preview-stage preview-stage-empty is-drop-active" : "preview-stage preview-stage-empty"}
-                  onDragEnter={handleSourceDragEnter}
-                  onDragLeave={handleSourceDragLeave}
-                  onDragOver={handleSourceDragOver}
-                  onDrop={handleSourceDrop}
+        <section className="create-workbench-banner" aria-label={activeModeProfile.title}>
+          <div className="create-workbench-title">
+            <span className="create-workbench-kicker">{activeModeProfile.eyebrow}</span>
+            <h1>{activeModeProfile.title}</h1>
+          </div>
+          <div className="create-workbench-metrics" aria-label={language === "zh" ? "当前任务参数" : "Current task settings"}>
+            <span>
+              <em>{bannerInputMetricLabel}</em>
+              <strong>{requestInputCount}</strong>
+            </span>
+            <span>
+              <em>{activeModeProfile.resolutionTitle}</em>
+              <strong>{selectedResolutionLabel}</strong>
+            </span>
+            <span>
+              <em>{language === "zh" ? "预计输出" : "Planned outputs"}</em>
+              <strong>{requestCountValue}</strong>
+            </span>
+            <span>
+              <em>{activeModeProfile.marketTitle}</em>
+              <strong>{modeSignalValue}</strong>
+            </span>
+          </div>
+          {creationModeSelector}
+        </section>
+        <section className="create-area-dock" aria-label={language === "zh" ? "创作台主要区" : "Workbench main areas"}>
+          <div className="create-area-nav-shell">
+            <span className="create-area-nav-label">{language === "zh" ? "主要区" : "Main areas"}</span>
+            <div className="create-area-nav" role="tablist" aria-label={language === "zh" ? "主要区切换" : "Main area switcher"}>
+              {workbenchAreas.map((area) => (
+                <button
+                  aria-controls={`create-area-panel-${area.key}`}
+                  aria-selected={activeWorkbenchArea === area.key}
+                  className={activeWorkbenchArea === area.key ? "create-area-tab is-active" : "create-area-tab"}
+                  id={`create-area-tab-${area.key}`}
+                  key={area.key}
+                  onClick={() => setActiveWorkbenchArea(area.key)}
+                  onFocus={() => setActiveWorkbenchArea(area.key)}
+                  onMouseEnter={() => setActiveWorkbenchArea(area.key)}
+                  role="tab"
+                  type="button"
                 >
-                  <div className="preview-stage-empty-content" />
-                </div>
-              )}
-            </section>
+                  <span>{area.label}</span>
+                  <strong>{area.summary}</strong>
+                </button>
+              ))}
+            </div>
+          </div>
 
-            {payload.creationMode === "reference-remix" ? (
-              <section className="panel create-panel create-reference-panel">
-                <div className="split-header compact">
-                  <div>
-                    <h2>{text.referenceImages}</h2>
-                  </div>
-                  <div className="create-panel-actions">
-                    <button className="preview-stage-upload-button" onClick={openReferenceFilePicker} type="button">
-                      {text.chooseFiles}
-                    </button>
-                    {referenceFiles.length ? (
-                      <span className="preview-stage-counter">
-                        {formatImageCounter(language, referencePreviewIndex + 1, referenceFiles.length)}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-                <input
-                  ref={referenceFileInputRef}
-                  multiple={!isSingleReferenceMode}
-                  accept="image/*"
-                  className="create-file-input-hidden"
-                  onChange={handleReferenceFileChange}
-                  type="file"
-                />
-                {currentReferencePreviewUrl ? (
-                  <>
-                    <div
-                      className={isReferenceDropActive ? "preview-stage is-drop-active" : "preview-stage"}
-                      onDragEnter={handleReferenceDragEnter}
-                      onDragLeave={handleReferenceDragLeave}
-                      onDragOver={handleReferenceDragOver}
-                      onDrop={handleReferenceDrop}
-                    >
-                      <img
-                        alt={referenceFiles[referencePreviewIndex]?.name || text.referenceImages}
-                        className="preview-stage-image"
-                        decoding="async"
-                        src={currentReferencePreviewUrl}
-                      />
-                      {referencePreviewUrls.length > 1 ? (
-                        <>
-                          <button aria-label={text.previousImage} className="preview-arrow preview-arrow-left" onClick={showPreviousReferencePreview} type="button">
-                            {"<"}
-                          </button>
-                          <button aria-label={text.nextImage} className="preview-arrow preview-arrow-right" onClick={showNextReferencePreview} type="button">
-                            {">"}
-                          </button>
-                        </>
+          <div className="create-area-panels">
+            <section
+              aria-labelledby="create-area-tab-assets"
+              className={activeWorkbenchArea === "assets" ? "create-area-panel is-active" : "create-area-panel"}
+              id="create-area-panel-assets"
+              role="tabpanel"
+            >
+              <div className="create-area-panel-stage is-assets">
+                <section className="panel create-panel create-source-panel">
+                  <div className="split-header compact">
+                    <div>
+                      <h2>{activeModeProfile.assetTitle}</h2>
+                    </div>
+                    <div className="create-panel-actions">
+                      <button className="preview-stage-upload-button" onClick={openSourceFilePicker} type="button">
+                        {text.chooseFiles}
+                      </button>
+                      {files.length ? (
+                        <span className="preview-stage-counter">
+                          {formatImageCounter(language, previewIndex + 1, files.length)}
+                        </span>
                       ) : null}
                     </div>
-                    {referencePreviewUrls.length > 1 ? (
-                      <div className="preview-thumb-row" role="tablist" aria-label={text.referenceImages}>
-                        {referencePreviewUrls.map((url, index) => (
+                  </div>
+                  <input
+                    ref={sourceFileInputRef}
+                    multiple={!isSingleSourceMode}
+                    accept="image/*"
+                    className="create-file-input-hidden"
+                    onChange={handleSourceFileChange}
+                    type="file"
+                  />
+                  {currentPreviewUrl ? (
+                    <>
+                      <div
+                        className={isSourceDropActive ? "preview-stage is-drop-active" : "preview-stage"}
+                        onDragEnter={handleSourceDragEnter}
+                        onDragLeave={handleSourceDragLeave}
+                        onDragOver={handleSourceDragOver}
+                        onDrop={handleSourceDrop}
+                      >
+                        <img
+                          alt={files[previewIndex]?.name || text.livePreview}
+                          className="preview-stage-image"
+                          decoding="async"
+                          src={currentPreviewUrl}
+                        />
+                        {previewUrls.length > 1 ? (
+                          <>
+                            <button aria-label={text.previousImage} className="preview-arrow preview-arrow-left" onClick={showPreviousPreview} type="button">
+                              {"<"}
+                            </button>
+                            <button aria-label={text.nextImage} className="preview-arrow preview-arrow-right" onClick={showNextPreview} type="button">
+                              {">"}
+                            </button>
+                          </>
+                        ) : null}
+                      </div>
+                      {previewUrls.length > 1 ? (
+                        <div className="preview-thumb-row" role="tablist" aria-label={text.livePreview}>
+                          {previewUrls.map((url, index) => (
+                            <button
+                              aria-label={files[index]?.name || `${text.livePreview} ${index + 1}`}
+                              className={index === previewIndex ? "preview-thumb is-active" : "preview-thumb"}
+                              key={`${files[index]?.name || "image"}-${index}`}
+                              onClick={() => setPreviewIndex(index)}
+                              type="button"
+                            >
+                              <img alt={files[index]?.name || text.livePreview} decoding="async" loading="lazy" src={url} />
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div
+                      className={isSourceDropActive ? "preview-stage preview-stage-empty is-drop-active" : "preview-stage preview-stage-empty"}
+                      onDragEnter={handleSourceDragEnter}
+                      onDragLeave={handleSourceDragLeave}
+                      onDragOver={handleSourceDragOver}
+                      onDrop={handleSourceDrop}
+                    >
+                      <div className="preview-stage-empty-content" />
+                    </div>
+                  )}
+                </section>
+
+                {payload.creationMode === "reference-remix" ? (
+                  <section className="panel create-panel create-reference-panel">
+                    <div className="split-header compact">
+                      <div>
+                        <h2>{text.referenceImages}</h2>
+                      </div>
+                      <div className="create-panel-actions">
+                        <button className="preview-stage-upload-button" onClick={openReferenceFilePicker} type="button">
+                          {text.chooseFiles}
+                        </button>
+                        {referenceFiles.length ? (
+                          <span className="preview-stage-counter">
+                            {formatImageCounter(language, referencePreviewIndex + 1, referenceFiles.length)}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                    <input
+                      ref={referenceFileInputRef}
+                      multiple={!isSingleReferenceMode}
+                      accept="image/*"
+                      className="create-file-input-hidden"
+                      onChange={handleReferenceFileChange}
+                      type="file"
+                    />
+                    {currentReferencePreviewUrl ? (
+                      <>
+                        <div
+                          className={isReferenceDropActive ? "preview-stage is-drop-active" : "preview-stage"}
+                          onDragEnter={handleReferenceDragEnter}
+                          onDragLeave={handleReferenceDragLeave}
+                          onDragOver={handleReferenceDragOver}
+                          onDrop={handleReferenceDrop}
+                        >
+                          <img
+                            alt={referenceFiles[referencePreviewIndex]?.name || text.referenceImages}
+                            className="preview-stage-image"
+                            decoding="async"
+                            src={currentReferencePreviewUrl}
+                          />
+                          {referencePreviewUrls.length > 1 ? (
+                            <>
+                              <button aria-label={text.previousImage} className="preview-arrow preview-arrow-left" onClick={showPreviousReferencePreview} type="button">
+                                {"<"}
+                              </button>
+                              <button aria-label={text.nextImage} className="preview-arrow preview-arrow-right" onClick={showNextReferencePreview} type="button">
+                                {">"}
+                              </button>
+                            </>
+                          ) : null}
+                        </div>
+                        {referencePreviewUrls.length > 1 ? (
+                          <div className="preview-thumb-row" role="tablist" aria-label={text.referenceImages}>
+                            {referencePreviewUrls.map((url, index) => (
+                              <button
+                                aria-label={referenceFiles[index]?.name || `${text.referenceImages} ${index + 1}`}
+                                className={index === referencePreviewIndex ? "preview-thumb is-active" : "preview-thumb"}
+                                key={`${referenceFiles[index]?.name || "reference"}-${index}`}
+                                onClick={() => setReferencePreviewIndex(index)}
+                                type="button"
+                              >
+                                <img alt={referenceFiles[index]?.name || text.referenceImages} decoding="async" loading="lazy" src={url} />
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <div
+                        className={isReferenceDropActive ? "preview-stage preview-stage-empty is-drop-active" : "preview-stage preview-stage-empty"}
+                        onDragEnter={handleReferenceDragEnter}
+                        onDragLeave={handleReferenceDragLeave}
+                        onDragOver={handleReferenceDragOver}
+                        onDrop={handleReferenceDrop}
+                      >
+                        <div className="preview-stage-empty-content" />
+                      </div>
+                    )}
+                  </section>
+                ) : null}
+              </div>
+            </section>
+
+            <section
+              aria-labelledby="create-area-tab-brief"
+              className={activeWorkbenchArea === "brief" ? "create-area-panel is-active" : "create-area-panel"}
+              id="create-area-panel-brief"
+              role="tabpanel"
+            >
+              <div className="create-area-panel-stage is-brief">
+                <section className="panel create-panel create-base-panel">
+                  <div className="create-mode-panel-heading">
+                    <span className="create-workbench-kicker">{activeModeProfile.eyebrow}</span>
+                    <h2>{activeModeProfile.fieldTitle}</h2>
+                  </div>
+                  <div className={payload.creationMode === "reference-remix" ? "create-base-grid is-remix-layout" : "create-base-grid"}>
+                    <div className="create-base-fields">
+                {isPromptMode ? (
+                  <div className="create-mode-fields create-prompt-fields">
+                    {payload.promptInputs.map((promptInput, promptIndex) => (
+                      <label className="create-field create-prompt-field" key={`prompt-input-${promptIndex}`}>
+                        <span>{`${text.promptInput} ${promptIndex + 1}`}</span>
+                        <textarea
+                          ref={(element) => {
+                            promptInputRefs.current[promptIndex] = element;
+                          }}
+                          rows={promptRows}
+                          value={promptInput}
+                          onChange={(event) => updatePromptInput(promptIndex, event.target.value)}
+                        />
+                        <div className="button-row">
                           <button
-                            aria-label={referenceFiles[index]?.name || `${text.referenceImages} ${index + 1}`}
-                            className={index === referencePreviewIndex ? "preview-thumb is-active" : "preview-thumb"}
-                            key={`${referenceFiles[index]?.name || "reference"}-${index}`}
-                            onClick={() => setReferencePreviewIndex(index)}
+                            className="ghost-button"
+                            disabled={payload.promptInputs.length <= 1}
+                            onClick={() => removePromptInput(promptIndex)}
                             type="button"
                           >
-                            <img alt={referenceFiles[index]?.name || text.referenceImages} decoding="async" loading="lazy" src={url} />
+                            {text.removePromptInput}
                           </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </>
-                ) : (
-                  <div
-                    className={isReferenceDropActive ? "preview-stage preview-stage-empty is-drop-active" : "preview-stage preview-stage-empty"}
-                    onDragEnter={handleReferenceDragEnter}
-                    onDragLeave={handleReferenceDragLeave}
-                    onDragOver={handleReferenceDragOver}
-                    onDrop={handleReferenceDrop}
-                  >
-                    <div className="preview-stage-empty-content" />
-                  </div>
-                )}
-              </section>
-            ) : null}
-
-            {payload.creationMode !== "prompt" && payload.creationMode !== "reference-remix" ? (
-              <section className="panel create-panel create-mode-panel">
-                <dl className="create-mode-panel-meta">
-                  <div>
-                    <dt>{language === "zh" ? "平台" : "Platform"}</dt>
-                    <dd>
-                      {payload.creationMode === "amazon-a-plus" ? (
-                        currentPlatformLabel
-                      ) : (
-                        <select
-                          className="create-mode-panel-select"
-                          value={payload.platform}
-                          onChange={(event) => setPayload((current) => ({ ...current, platform: event.target.value }))}
-                        >
-                          {PLATFORMS.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label[language]}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>{language === "zh" ? "国家 / 语言" : "Country / language"}</dt>
-                    <dd className="create-mode-panel-market">
-                      <div className="create-mode-panel-market-grid">
-                        <select
-                          className="create-mode-panel-select"
-                          value={payload.country}
+                        </div>
+                      </label>
+                    ))}
+                    <div className="create-prompt-actions">
+                      <button className="ghost-button" onClick={addPromptInput} type="button">
+                        {text.addPromptInput}
+                      </button>
+                      <label className="checkbox-row helper-toggle-row">
+                        <input
+                          checked={payload.translatePromptToOutputLanguage}
+                          type="checkbox"
                           onChange={(event) =>
                             setPayload((current) => ({
                               ...current,
-                              country: event.target.value,
+                              translatePromptToOutputLanguage: event.target.checked,
                             }))
                           }
-                        >
-                          {COUNTRIES.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label[language]}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          className="create-mode-panel-select"
-                          value={payload.language}
+                        />
+                        <span>{text.translatePromptToOutputLanguage}</span>
+                      </label>
+                      <label className="checkbox-row helper-toggle-row">
+                        <input
+                          checked={payload.autoOptimizePrompt}
+                          type="checkbox"
                           onChange={(event) =>
                             setPayload((current) => ({
                               ...current,
-                              language: event.target.value,
+                              autoOptimizePrompt: event.target.checked,
                             }))
                           }
-                        >
-                          {OUTPUT_LANGUAGES.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label[language]}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </dd>
+                        />
+                        <span>{text.autoOptimizePrompt}</span>
+                      </label>
+                    </div>
                   </div>
-                </dl>
-              </section>
-            ) : null}
-          </div>
-        </aside>
+                ) : null}
 
-        <div className="create-main stack gap-24">
-          <div className="create-primary-grid">
-        <section className="panel create-panel create-base-panel">
-          <div className="create-base-mode-strip">{creationModeSelector}</div>
-          <div className={payload.creationMode === "reference-remix" ? "create-base-grid is-remix-layout" : "create-base-grid"}>
-              <div className="create-base-fields">
-              {payload.creationMode === "prompt" ? (
-                <>
-                  {payload.promptInputs.map((promptInput, promptIndex) => (
-                    <label key={`prompt-input-${promptIndex}`}>
-                      <span>{`${text.promptInput} ${promptIndex + 1}`}</span>
-                      <textarea
-                        ref={(element) => {
-                          promptInputRefs.current[promptIndex] = element;
-                        }}
-                        rows={promptRows}
-                        value={promptInput}
-                        onChange={(event) => updatePromptInput(promptIndex, event.target.value)}
+                {isStandardMode ? (
+                  <div className="create-mode-fields create-standard-fields">
+                    <label className="create-field create-field-title">
+                      <span>{structuredFieldLabels.productName}</span>
+                      <input
+                        ref={productNameInputRef}
+                        value={payload.productName}
+                        onChange={(event) => setPayload({ ...payload, productName: event.target.value })}
                       />
-                      <div className="button-row">
-                        <button
-                          className="ghost-button"
-                          disabled={payload.promptInputs.length <= 1}
-                          onClick={() => removePromptInput(promptIndex)}
-                          type="button"
-                        >
-                          {text.removePromptInput}
-                        </button>
-                      </div>
                     </label>
-                  ))}
-                  <div className="button-row">
-                    <button className="ghost-button" onClick={addPromptInput} type="button">
-                      {text.addPromptInput}
-                    </button>
+                    <label className="create-field create-field-long">
+                      <span>{structuredFieldLabels.sellingPoints}</span>
+                      <textarea
+                        rows={longRows}
+                        value={payload.sellingPoints}
+                        onChange={(event) => setPayload({ ...payload, sellingPoints: event.target.value })}
+                      />
+                    </label>
+                    <label className="create-field">
+                      <span>{structuredFieldLabels.materialInfo}</span>
+                      <textarea
+                        rows={mediumRows}
+                        value={payload.materialInfo}
+                        onChange={(event) => setPayload({ ...payload, materialInfo: event.target.value })}
+                      />
+                    </label>
+                    <label className="create-field">
+                      <span>{structuredFieldLabels.sizeInfo}</span>
+                      <textarea
+                        rows={mediumRows}
+                        value={payload.sizeInfo}
+                        onChange={(event) => setPayload({ ...payload, sizeInfo: event.target.value })}
+                      />
+                    </label>
+                    <label className="create-field create-field-brand">
+                      <span>{structuredFieldLabels.brandName}</span>
+                      <input
+                        list="brand-library-options"
+                        value={payload.brandName}
+                        onChange={(event) => setPayload({ ...payload, brandName: event.target.value })}
+                      />
+                    </label>
                   </div>
-                  <label className="checkbox-row helper-toggle-row">
-                    <input
-                      checked={payload.translatePromptToOutputLanguage}
-                      type="checkbox"
-                      onChange={(event) =>
-                        setPayload((current) => ({
-                          ...current,
-                          translatePromptToOutputLanguage: event.target.checked,
-                        }))
-                      }
-                    />
-                    <span>{text.translatePromptToOutputLanguage}</span>
-                  </label>
-                  <label className="checkbox-row helper-toggle-row">
-                    <input
-                      checked={payload.autoOptimizePrompt}
-                      type="checkbox"
-                      onChange={(event) =>
-                        setPayload((current) => ({
-                          ...current,
-                          autoOptimizePrompt: event.target.checked,
-                        }))
-                      }
-                    />
-                    <span>{text.autoOptimizePrompt}</span>
-                  </label>
-                </>
-              ) : null}
-              {isStructuredCommerceMode ? (
-                <>
-                  <label>
-                    <span>{commerceProductNameLabel}</span>
-                    <input
-                      ref={productNameInputRef}
-                      required
-                      value={payload.productName}
-                      onChange={(event) => setPayload({ ...payload, productName: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    <span>{commerceSellingPointsLabel}</span>
-                    <textarea
-                      rows={longRows}
-                      value={payload.sellingPoints}
-                      onChange={(event) => setPayload({ ...payload, sellingPoints: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    <span>{commerceMaterialInfoLabel}</span>
-                    <textarea
-                      rows={mediumRows}
-                      value={payload.materialInfo}
-                      onChange={(event) => setPayload({ ...payload, materialInfo: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    <span>{commerceSizeInfoLabel}</span>
-                    <textarea
-                      rows={mediumRows}
-                      value={payload.sizeInfo}
-                      onChange={(event) => setPayload({ ...payload, sizeInfo: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    <span>{commerceBrandNameLabel}</span>
-                    <input
-                      list="brand-library-options"
-                      value={payload.brandName}
-                      onChange={(event) => setPayload({ ...payload, brandName: event.target.value })}
-                    />
-                    <datalist id="brand-library-options">
-                      {brands.map((brand) => (
-                        <option key={brand.id} value={brand.name} />
-                      ))}
-                    </datalist>
-                  </label>
-                </>
-              ) : null}
+                ) : null}
+
+                {isSuiteMode ? (
+                  <div className="create-mode-fields create-suite-fields">
+                    <label className="create-field create-field-title">
+                      <span>{structuredFieldLabels.productName}</span>
+                      <input
+                        ref={productNameInputRef}
+                        value={payload.productName}
+                        onChange={(event) => setPayload({ ...payload, productName: event.target.value })}
+                      />
+                    </label>
+                    <label className="create-field create-field-brand">
+                      <span>{structuredFieldLabels.brandName}</span>
+                      <input
+                        list="brand-library-options"
+                        value={payload.brandName}
+                        onChange={(event) => setPayload({ ...payload, brandName: event.target.value })}
+                      />
+                    </label>
+                    <label className="create-field create-field-long">
+                      <span>{structuredFieldLabels.sellingPoints}</span>
+                      <textarea
+                        rows={longRows}
+                        value={payload.sellingPoints}
+                        onChange={(event) => setPayload({ ...payload, sellingPoints: event.target.value })}
+                      />
+                    </label>
+                    <label className="create-field">
+                      <span>{structuredFieldLabels.materialInfo}</span>
+                      <textarea
+                        rows={mediumRows}
+                        value={payload.materialInfo}
+                        onChange={(event) => setPayload({ ...payload, materialInfo: event.target.value })}
+                      />
+                    </label>
+                    <label className="create-field">
+                      <span>{structuredFieldLabels.sizeInfo}</span>
+                      <textarea
+                        rows={mediumRows}
+                        value={payload.sizeInfo}
+                        onChange={(event) => setPayload({ ...payload, sizeInfo: event.target.value })}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+
+                {isAmazonMode ? (
+                  <div className="create-mode-fields create-amazon-fields">
+                    <label className="create-field create-field-title">
+                      <span>{structuredFieldLabels.productName}</span>
+                      <input
+                        ref={productNameInputRef}
+                        value={payload.productName}
+                        onChange={(event) => setPayload({ ...payload, productName: event.target.value })}
+                      />
+                    </label>
+                    <label className="create-field create-field-long">
+                      <span>{structuredFieldLabels.sellingPoints}</span>
+                      <textarea
+                        rows={longRows}
+                        value={payload.sellingPoints}
+                        onChange={(event) => setPayload({ ...payload, sellingPoints: event.target.value })}
+                      />
+                    </label>
+                    <label className="create-field create-field-proof">
+                      <span>{structuredFieldLabels.materialInfo}</span>
+                      <textarea
+                        rows={mediumRows}
+                        value={payload.materialInfo}
+                        onChange={(event) => setPayload({ ...payload, materialInfo: event.target.value })}
+                      />
+                    </label>
+                    <label className="create-field create-field-compare">
+                      <span>{structuredFieldLabels.sizeInfo}</span>
+                      <textarea
+                        rows={mediumRows}
+                        value={payload.sizeInfo}
+                        onChange={(event) => setPayload({ ...payload, sizeInfo: event.target.value })}
+                      />
+                    </label>
+                    <label className="create-field create-field-brand">
+                      <span>{structuredFieldLabels.brandName}</span>
+                      <input
+                        list="brand-library-options"
+                        value={payload.brandName}
+                        onChange={(event) => setPayload({ ...payload, brandName: event.target.value })}
+                      />
+                    </label>
+                  </div>
+                ) : null}
+
+                {isReferenceMode ? (
+                  <div className="create-mode-fields create-reference-fields">
+                    <div className="create-reference-status-grid">
+                      <span>
+                        <em>{language === "zh" ? "原图" : "Source"}</em>
+                        <strong>{files.length}</strong>
+                      </span>
+                      <span>
+                        <em>{language === "zh" ? "参考图" : "Reference"}</em>
+                        <strong>{referenceFiles.length}</strong>
+                      </span>
+                      <span>
+                        <em>{activeModeProfile.ratioTitle}</em>
+                        <strong>{selectedRatios[0] ?? "1:1"}</strong>
+                      </span>
+                      <span>
+                        <em>{activeModeProfile.resolutionTitle}</em>
+                        <strong>{selectedResolutionLabel}</strong>
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+
+                <datalist id="brand-library-options">
+                  {brands.map((brand) => (
+                    <option key={brand.id} value={brand.name} />
+                  ))}
+                </datalist>
+                    </div>
+                  </div>
+                </section>
+
+                {payload.creationMode !== "prompt" && payload.creationMode !== "reference-remix" ? (
+                  <section className="panel create-panel create-mode-panel create-market-panel">
+                    <dl className="create-mode-panel-meta">
+                      <div>
+                        <dt>{language === "zh" ? "平台" : "Platform"}</dt>
+                        <dd>
+                          {payload.creationMode === "amazon-a-plus" ? (
+                            currentPlatformLabel
+                          ) : (
+                            <select
+                              className="create-mode-panel-select"
+                              value={payload.platform}
+                              onChange={(event) => setPayload((current) => ({ ...current, platform: event.target.value }))}
+                            >
+                              {PLATFORMS.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label[language]}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>{language === "zh" ? "国家 / 语言" : "Country / language"}</dt>
+                        <dd className="create-mode-panel-market">
+                          <div className="create-mode-panel-market-grid">
+                            <select
+                              className="create-mode-panel-select"
+                              value={payload.country}
+                              onChange={(event) =>
+                                setPayload((current) => ({
+                                  ...current,
+                                  country: event.target.value,
+                                }))
+                              }
+                            >
+                              {COUNTRIES.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label[language]}
+                                </option>
+                              ))}
+                            </select>
+                            <select
+                              className="create-mode-panel-select"
+                              value={payload.language}
+                              onChange={(event) =>
+                                setPayload((current) => ({
+                                  ...current,
+                                  language: event.target.value,
+                                }))
+                              }
+                            >
+                              {OUTPUT_LANGUAGES.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label[language]}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </dd>
+                      </div>
+                    </dl>
+                  </section>
+                ) : null}
               </div>
-              <aside className="create-base-side">
+            </section>
+
+            <section
+              aria-labelledby="create-area-tab-settings"
+              className={activeWorkbenchArea === "settings" ? "create-area-panel is-active" : "create-area-panel"}
+              id="create-area-panel-settings"
+              role="tabpanel"
+            >
+              <div className="create-area-panel-stage is-settings">
+                <section className="panel create-panel create-base-panel create-output-panel">
+                  <div className="create-mode-panel-heading">
+                    <span className="create-workbench-kicker">{activeModeProfile.eyebrow}</span>
+                    <h2>{language === "zh" ? "输出参数" : "Output settings"}</h2>
+                  </div>
+                  <aside className={`create-base-side ${activeModeClassName}`}>
                 <div className="create-base-side-stack">
+                  <fieldset className="create-generation-fieldset create-api-fieldset">
+                    <legend>
+                      <span>{text.apiSettingsTitle}</span>
+                      <span className="create-generation-legend-note">OpenAI</span>
+                    </legend>
+                    <div className="create-api-settings-grid">
+                      <label>
+                        <span>{text.apiKey}</span>
+                        <input
+                          ref={browserApiKeyInputRef}
+                          autoComplete="off"
+                          type="password"
+                          value={browserApiSettings.apiKey}
+                          onChange={(event) => patchBrowserApiSettings({ apiKey: event.target.value })}
+                        />
+                      </label>
+                      <label className="create-api-settings-wide">
+                        <span>{text.apiBaseUrl}</span>
+                        <input
+                          placeholder="https://api.openai.com/v1/responses"
+                          value={browserApiSettings.apiBaseUrl}
+                          onChange={(event) => patchBrowserApiSettings({ apiBaseUrl: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>{text.apiTextModel}</span>
+                        <input
+                          value={browserApiSettings.textModel}
+                          onChange={(event) => patchBrowserApiSettings({ textModel: event.target.value })}
+                        />
+                      </label>
+                      <label>
+                        <span>{text.apiImageModel}</span>
+                        <input
+                          value={browserApiSettings.imageModel}
+                          onChange={(event) => patchBrowserApiSettings({ imageModel: event.target.value })}
+                        />
+                      </label>
+                      <label className="create-api-settings-wide">
+                        <span>{text.apiHeaders}</span>
+                        <textarea
+                          rows={3}
+                          placeholder='{"X-Provider":"value"}'
+                          value={browserApiSettings.apiHeaders}
+                          onChange={(event) => patchBrowserApiSettings({ apiHeaders: event.target.value })}
+                        />
+                      </label>
+                    </div>
+                  </fieldset>
                   {isStructuredCommerceMode ? (
                     <fieldset className="create-generation-fieldset create-generation-fieldset-types">
                       <legend>
-                        <span>{text.imageTypes}</span>
+                        <span>{activeModeProfile.typeTitle}</span>
                         <span className="create-generation-legend-note">({text.typesUnit})</span>
                       </legend>
                       <div className="chip-grid small">
@@ -2012,7 +2505,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                   ) : null}
                   <fieldset className="create-generation-fieldset create-generation-fieldset-ratios">
                     <legend>
-                      <span>{text.ratios}</span>
+                      <span>{activeModeProfile.ratioTitle}</span>
                       <span className="create-generation-legend-note">({selectedRatioDirection})</span>
                     </legend>
                     <div className="chip-grid chip-grid-ratios small">
@@ -2026,7 +2519,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                   </fieldset>
                   <fieldset className="create-generation-fieldset create-generation-fieldset-resolutions">
                     <legend>
-                      <span>{text.resolutions}</span>
+                      <span>{activeModeProfile.resolutionTitle}</span>
                       <span className="create-generation-legend-note">({selectedResolutionDetail})</span>
                     </legend>
                     <div className="chip-grid chip-grid-resolutions small">
@@ -2039,10 +2532,27 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                     </div>
                   </fieldset>
                 </div>
-                <div className={payload.creationMode === "reference-remix" ? "create-quantity-submit-group create-quantity-submit-group-inline is-remix-mode" : "create-quantity-submit-group create-quantity-submit-group-inline"}>
+                  </aside>
+                </section>
+              </div>
+            </section>
+
+            <section
+              aria-labelledby="create-area-tab-submit"
+              className={activeWorkbenchArea === "submit" ? "create-area-panel is-active" : "create-area-panel"}
+              id="create-area-panel-submit"
+              role="tabpanel"
+            >
+              <div className="create-area-panel-stage is-submit">
+                <section className="panel create-panel create-submit-panel">
+                  <div className="create-mode-panel-heading">
+                    <span className="create-workbench-kicker">{activeModeProfile.eyebrow}</span>
+                    <h2>{language === "zh" ? "生成确认" : "Generation checkout"}</h2>
+                  </div>
+                  <div className={payload.creationMode === "reference-remix" ? "create-quantity-submit-group create-quantity-submit-group-inline is-remix-mode" : "create-quantity-submit-group create-quantity-submit-group-inline"}>
                   {payload.creationMode !== "reference-remix" && payload.creationMode !== "prompt" ? (
                     <label className="create-quantity-field create-quantity-card">
-                      <span>{structuredGroupsLabel}</span>
+                      <span>{activeModeProfile.quantityTitle}</span>
                       <input
                         ref={variantsInputRef}
                         min={1}
@@ -2099,11 +2609,11 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                     </button>
                   </div>
                 </div>
-              </aside>
-            </div>
-        </section>
+                </section>
+              </div>
+            </section>
           </div>
-        </div>
+        </section>
       </form>
 
       {submittedJobId ? (

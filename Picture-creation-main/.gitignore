@@ -18,3 +18,4 @@ tmp
 .env.*
 !.env.example
 Thumbs.db
+.vercel
