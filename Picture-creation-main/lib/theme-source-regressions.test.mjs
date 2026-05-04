@@ -78,6 +78,6 @@ test("light theme styles cover major surfaces and native controls", () => {
     cssContent,
     /html\[data-theme="light"\]\s+:where\(\.panel,[\s\S]*\.service-settings-panel[\s\S]*\)\s*\{/,
   );
-  assert.match(cssContent, /html\[data-theme="light"\]\s+\.create-area-tab\.is-active/);
+  assert.match(cssContent, /html\[data-theme="light"\]\s+\.create-area-dock/);
   assert.match(cssContent, /html\[data-theme="light"\]\s+\.chip\.is-active/);
 });

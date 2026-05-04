@@ -4,12 +4,6 @@ import { type ChangeEvent, type CSSProperties, type DragEvent, useEffect, useMem
 import { useRouter } from "next/navigation";
 
 import {
-  DEFAULT_BROWSER_API_SETTINGS,
-  readBrowserApiSettings,
-  type BrowserApiSettings,
-  writeBrowserApiSettings,
-} from "@/lib/browser-api-settings";
-import {
   ASPECT_RATIOS,
   COUNTRIES,
   getDefaultCountryForLanguage,
@@ -45,7 +39,6 @@ import type {
 import { dimensionsForVariant } from "@/lib/utils";
 
 type SubmitBlockReason =
-  | "api-key"
   | "files"
   | "prompt"
   | "reference"
@@ -522,7 +515,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const [draftReady, setDraftReady] = useState(false);
   const [agentDraftId, setAgentDraftId] = useState(() => createCreateDraftId());
   const [submittedJobId, setSubmittedJobId] = useState<string | null>(null);
-  const [browserApiSettings, setBrowserApiSettings] = useState<BrowserApiSettings>(DEFAULT_BROWSER_API_SETTINGS);
   const [submitBlockedFeedback, setSubmitBlockedFeedback] = useState(false);
   const [isSourceDropActive, setIsSourceDropActive] = useState(false);
   const [isReferenceDropActive, setIsReferenceDropActive] = useState(false);
@@ -532,7 +524,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   const referenceFileInputRef = useRef<HTMLInputElement | null>(null);
   const referenceDropDepthRef = useRef(0);
   const productNameInputRef = useRef<HTMLInputElement | null>(null);
-  const browserApiKeyInputRef = useRef<HTMLInputElement | null>(null);
   const promptInputRefs = useRef<Array<HTMLTextAreaElement | null>>([]);
   const variantsInputRef = useRef<HTMLInputElement | null>(null);
   const submitBlockedTimerRef = useRef<number | null>(null);
@@ -592,21 +583,9 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     return parsedVariantsPerType === null ? text.quantityRangeError : "";
   }, [parsedVariantsPerType, payload.creationMode, text.quantityRangeError, text.quantityRequired, variantsInput]);
 
-  function patchBrowserApiSettings(patch: Partial<BrowserApiSettings>) {
-    setBrowserApiSettings((current) => {
-      const next = { ...current, ...patch, provider: "openai" as const };
-      writeBrowserApiSettings(next);
-      return next;
-    });
-  }
-
   const submitBlockReason = useMemo<SubmitBlockReason | null>(() => {
     if (isPending) {
       return null;
-    }
-
-    if (!browserApiSettings.apiKey.trim()) {
-      return "api-key";
     }
 
     if (payload.creationMode !== "prompt" && !files.length) {
@@ -651,7 +630,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
 
     return null;
   }, [
-    browserApiSettings.apiKey,
     files.length,
     isPending,
     currentRequestImageCount,
@@ -664,10 +642,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     referenceFiles.length,
   ]);
   function getSubmitBlockedMessage(reason: SubmitBlockReason) {
-    if (reason === "api-key") {
-      return text.apiKeyRequired;
-    }
-
     if (reason === "files") {
       return text.filesRequired;
     }
@@ -712,10 +686,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   }
   const submitBlockedMessage = submitBlockReason ? getSubmitBlockedMessage(submitBlockReason) : "";
   const isSubmitBlocked = Boolean(submitBlockReason);
-
-  useEffect(() => {
-    setBrowserApiSettings(readBrowserApiSettings());
-  }, []);
 
   useEffect(() => {
     try {
@@ -1113,6 +1083,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       setter(selected.filter((item) => item !== value));
       return;
     }
+
     setter([...selected, value]);
   }
 
@@ -1326,14 +1297,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
         referenceNegativePrompt: undefined,
         referenceLayoutOverride: payload.creationMode === "reference-remix" ? null : referenceLayoutOverride,
         referencePosterCopyOverride: payload.creationMode === "reference-remix" ? null : referencePosterCopyOverride,
-        temporaryProvider: {
-          provider: browserApiSettings.provider,
-          apiKey: browserApiSettings.apiKey,
-          apiBaseUrl: browserApiSettings.apiBaseUrl,
-          apiHeaders: browserApiSettings.apiHeaders,
-          textModel: browserApiSettings.textModel,
-          imageModel: browserApiSettings.imageModel,
-        },
         uiLanguage: language,
       }),
     );
@@ -1408,16 +1371,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
   }
 
   function focusBlockedSubmitTarget(reason: SubmitBlockReason) {
-    if (reason === "api-key") {
-      setActiveWorkbenchArea("settings");
-      window.setTimeout(() => {
-        browserApiKeyInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-        browserApiKeyInputRef.current?.focus();
-        browserApiKeyInputRef.current?.select();
-      }, 0);
-      return;
-    }
-
     if (reason === "files") {
       setActiveWorkbenchArea("assets");
       window.setTimeout(() => {
@@ -1656,48 +1609,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       : language === "zh"
         ? `${requestInputLabel} × ${effectiveTypeCount} 个类型 × ${parsedVariantsPerType ?? "-"} 组`
         : `${requestInputLabel} x ${effectiveTypeCount} type x ${parsedVariantsPerType ?? "-"} groups`;
-  const workbenchAreas = useMemo(
-    () =>
-      language === "zh"
-        ? [
-            {
-              key: "assets" as const,
-              label: "素材区",
-              summary: isReferenceMode ? `${files.length}+${referenceFiles.length}` : `${files.length}`,
-            },
-            { key: "brief" as const, label: "内容区", summary: activeModeProfile.fieldTitle },
-            {
-              key: "settings" as const,
-              label: "参数区",
-              summary: `${selectedRatios[0] ?? "1:1"} / ${selectedResolutions[0] ?? "1K"}`,
-            },
-            { key: "submit" as const, label: "生成区", summary: requestCountValue },
-          ]
-        : [
-            {
-              key: "assets" as const,
-              label: "Assets",
-              summary: isReferenceMode ? `${files.length}+${referenceFiles.length}` : `${files.length}`,
-            },
-            { key: "brief" as const, label: "Brief", summary: activeModeProfile.fieldTitle },
-            {
-              key: "settings" as const,
-              label: "Settings",
-              summary: `${selectedRatios[0] ?? "1:1"} / ${selectedResolutions[0] ?? "1K"}`,
-            },
-            { key: "submit" as const, label: "Generate", summary: requestCountValue },
-          ],
-    [
-      activeModeProfile.fieldTitle,
-      files.length,
-      isReferenceMode,
-      language,
-      referenceFiles.length,
-      requestCountValue,
-      selectedRatios,
-      selectedResolutions,
-    ],
-  );
   useEffect(() => {
     function handleCreateAgentMap(event: Event) {
       const mapped = (event as CustomEvent<CreateAgentMapDetail>).detail;
@@ -1909,35 +1820,11 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
           {creationModeSelector}
         </section>
         <section className="create-area-dock" aria-label={language === "zh" ? "创作台主要区" : "Workbench main areas"}>
-          <div className="create-area-nav-shell">
-            <span className="create-area-nav-label">{language === "zh" ? "主要区" : "Main areas"}</span>
-            <div className="create-area-nav" role="tablist" aria-label={language === "zh" ? "主要区切换" : "Main area switcher"}>
-              {workbenchAreas.map((area) => (
-                <button
-                  aria-controls={`create-area-panel-${area.key}`}
-                  aria-selected={activeWorkbenchArea === area.key}
-                  className={activeWorkbenchArea === area.key ? "create-area-tab is-active" : "create-area-tab"}
-                  id={`create-area-tab-${area.key}`}
-                  key={area.key}
-                  onClick={() => setActiveWorkbenchArea(area.key)}
-                  onFocus={() => setActiveWorkbenchArea(area.key)}
-                  onMouseEnter={() => setActiveWorkbenchArea(area.key)}
-                  role="tab"
-                  type="button"
-                >
-                  <span>{area.label}</span>
-                  <strong>{area.summary}</strong>
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="create-area-panels">
             <section
-              aria-labelledby="create-area-tab-assets"
+              aria-label={language === "zh" ? "素材区" : "Assets"}
               className={activeWorkbenchArea === "assets" ? "create-area-panel is-active" : "create-area-panel"}
               id="create-area-panel-assets"
-              role="tabpanel"
             >
               <div className="create-area-panel-stage is-assets">
                 <section className="panel create-panel create-source-panel">
@@ -2103,10 +1990,9 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
             </section>
 
             <section
-              aria-labelledby="create-area-tab-brief"
+              aria-label={language === "zh" ? "内容区" : "Brief"}
               className={activeWorkbenchArea === "brief" ? "create-area-panel is-active" : "create-area-panel"}
               id="create-area-panel-brief"
-              role="tabpanel"
             >
               <div className="create-area-panel-stage is-brief">
                 <section className="panel create-panel create-base-panel">
@@ -2411,10 +2297,9 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
             </section>
 
             <section
-              aria-labelledby="create-area-tab-settings"
+              aria-label={language === "zh" ? "参数区" : "Settings"}
               className={activeWorkbenchArea === "settings" ? "create-area-panel is-active" : "create-area-panel"}
               id="create-area-panel-settings"
-              role="tabpanel"
             >
               <div className="create-area-panel-stage is-settings">
                 <section className="panel create-panel create-base-panel create-output-panel">
@@ -2423,125 +2308,75 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                     <h2>{language === "zh" ? "输出参数" : "Output settings"}</h2>
                   </div>
                   <aside className={`create-base-side ${activeModeClassName}`}>
-                <div className="create-base-side-stack">
-                  <fieldset className="create-generation-fieldset create-api-fieldset">
-                    <legend>
-                      <span>{text.apiSettingsTitle}</span>
-                      <span className="create-generation-legend-note">OpenAI</span>
-                    </legend>
-                    <div className="create-api-settings-grid">
-                      <label>
-                        <span>{text.apiKey}</span>
-                        <input
-                          ref={browserApiKeyInputRef}
-                          autoComplete="off"
-                          type="password"
-                          value={browserApiSettings.apiKey}
-                          onChange={(event) => patchBrowserApiSettings({ apiKey: event.target.value })}
-                        />
-                      </label>
-                      <label className="create-api-settings-wide">
-                        <span>{text.apiBaseUrl}</span>
-                        <input
-                          placeholder="https://api.openai.com/v1/responses"
-                          value={browserApiSettings.apiBaseUrl}
-                          onChange={(event) => patchBrowserApiSettings({ apiBaseUrl: event.target.value })}
-                        />
-                      </label>
-                      <label>
-                        <span>{text.apiTextModel}</span>
-                        <input
-                          value={browserApiSettings.textModel}
-                          onChange={(event) => patchBrowserApiSettings({ textModel: event.target.value })}
-                        />
-                      </label>
-                      <label>
-                        <span>{text.apiImageModel}</span>
-                        <input
-                          value={browserApiSettings.imageModel}
-                          onChange={(event) => patchBrowserApiSettings({ imageModel: event.target.value })}
-                        />
-                      </label>
-                      <label className="create-api-settings-wide">
-                        <span>{text.apiHeaders}</span>
-                        <textarea
-                          rows={3}
-                          placeholder='{"X-Provider":"value"}'
-                          value={browserApiSettings.apiHeaders}
-                          onChange={(event) => patchBrowserApiSettings({ apiHeaders: event.target.value })}
-                        />
-                      </label>
-                    </div>
-                  </fieldset>
-                  {isStructuredCommerceMode ? (
-                    <fieldset className="create-generation-fieldset create-generation-fieldset-types">
-                      <legend>
-                        <span>{activeModeProfile.typeTitle}</span>
-                        <span className="create-generation-legend-note">({text.typesUnit})</span>
-                      </legend>
-                      <div className="chip-grid small">
-                        {IMAGE_TYPE_OPTIONS.map((option) => {
-                          const isDisabled = option.value === "size-spec" && !hasStructuredSizeInfo;
-                          const isAutoSizeType = option.value === "size-spec" && hasStructuredSizeInfo;
-                          const isChecked = isAutoSizeType ? true : selectedTypes.includes(option.value);
-                          return (
-                            <label
-                              className={isChecked ? "chip is-active" : "chip"}
-                              key={option.value}
-                              title={option.description?.[language]}
-                            >
-                              <input
-                                checked={isChecked}
-                                disabled={isDisabled || isAutoSizeType}
-                                onChange={() => toggleSelection(option.value, selectedTypes, setSelectedTypes)}
-                                type="checkbox"
-                              />
+                    <div className="create-base-side-stack">
+                      {isStructuredCommerceMode ? (
+                        <fieldset className="create-generation-fieldset create-generation-fieldset-types">
+                          <legend>
+                            <span>{activeModeProfile.typeTitle}</span>
+                            <span className="create-generation-legend-note">({text.typesUnit})</span>
+                          </legend>
+                          <div className="chip-grid small">
+                            {IMAGE_TYPE_OPTIONS.map((option) => {
+                              const isDisabled = option.value === "size-spec" && !hasStructuredSizeInfo;
+                              const isAutoSizeType = option.value === "size-spec" && hasStructuredSizeInfo;
+                              const isChecked = isAutoSizeType ? true : selectedTypes.includes(option.value);
+                              return (
+                                <label
+                                  className={isChecked ? "chip is-active" : "chip"}
+                                  key={option.value}
+                                  title={option.description?.[language]}
+                                >
+                                  <input
+                                    checked={isChecked}
+                                    disabled={isDisabled || isAutoSizeType}
+                                    onChange={() => toggleSelection(option.value, selectedTypes, setSelectedTypes)}
+                                    type="checkbox"
+                                  />
+                                  <span>{option.label[language]}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </fieldset>
+                      ) : null}
+                      <fieldset className="create-generation-fieldset create-generation-fieldset-ratios">
+                        <legend>
+                          <span>{activeModeProfile.ratioTitle}</span>
+                          <span className="create-generation-legend-note">({selectedRatioDirection})</span>
+                        </legend>
+                        <div className="chip-grid chip-grid-ratios small">
+                          {ASPECT_RATIOS.map((option) => (
+                            <label className={selectedRatios.includes(option.value) ? "chip is-active" : "chip"} key={option.value}>
+                              <input checked={selectedRatios.includes(option.value)} onChange={() => selectSingle(option.value, setSelectedRatios)} type="checkbox" />
+                              <span>{option.value}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </fieldset>
+                      <fieldset className="create-generation-fieldset create-generation-fieldset-resolutions">
+                        <legend>
+                          <span>{activeModeProfile.resolutionTitle}</span>
+                          <span className="create-generation-legend-note">({selectedResolutionDetail})</span>
+                        </legend>
+                        <div className="chip-grid chip-grid-resolutions small">
+                          {resolutionOptions.map((option) => (
+                            <label className={selectedResolutions.includes(option.value) ? "chip is-active" : "chip"} key={option.value}>
+                              <input checked={selectedResolutions.includes(option.value)} onChange={() => selectSingle(option.value, setSelectedResolutions)} type="checkbox" />
                               <span>{option.label[language]}</span>
                             </label>
-                          );
-                        })}
-                      </div>
-                    </fieldset>
-                  ) : null}
-                  <fieldset className="create-generation-fieldset create-generation-fieldset-ratios">
-                    <legend>
-                      <span>{activeModeProfile.ratioTitle}</span>
-                      <span className="create-generation-legend-note">({selectedRatioDirection})</span>
-                    </legend>
-                    <div className="chip-grid chip-grid-ratios small">
-                      {ASPECT_RATIOS.map((option) => (
-                        <label className={selectedRatios.includes(option.value) ? "chip is-active" : "chip"} key={option.value}>
-                          <input checked={selectedRatios.includes(option.value)} onChange={() => selectSingle(option.value, setSelectedRatios)} type="checkbox" />
-                          <span>{option.value}</span>
-                        </label>
-                      ))}
+                          ))}
+                        </div>
+                      </fieldset>
                     </div>
-                  </fieldset>
-                  <fieldset className="create-generation-fieldset create-generation-fieldset-resolutions">
-                    <legend>
-                      <span>{activeModeProfile.resolutionTitle}</span>
-                      <span className="create-generation-legend-note">({selectedResolutionDetail})</span>
-                    </legend>
-                    <div className="chip-grid chip-grid-resolutions small">
-                      {resolutionOptions.map((option) => (
-                        <label className={selectedResolutions.includes(option.value) ? "chip is-active" : "chip"} key={option.value}>
-                          <input checked={selectedResolutions.includes(option.value)} onChange={() => selectSingle(option.value, setSelectedResolutions)} type="checkbox" />
-                          <span>{option.label[language]}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </fieldset>
-                </div>
                   </aside>
                 </section>
               </div>
             </section>
 
             <section
-              aria-labelledby="create-area-tab-submit"
+              aria-label={language === "zh" ? "生成区" : "Generate"}
               className={activeWorkbenchArea === "submit" ? "create-area-panel is-active" : "create-area-panel"}
               id="create-area-panel-submit"
-              role="tabpanel"
             >
               <div className="create-area-panel-stage is-submit">
                 <section className="panel create-panel create-submit-panel">
