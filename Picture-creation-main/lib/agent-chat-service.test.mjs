@@ -39,6 +39,7 @@ function compileTsModule(filePath, stubs) {
     Buffer,
     File,
     FormData,
+    fetch: (...args) => globalThis.fetch(...args),
     setTimeout,
     clearTimeout,
   };
@@ -104,6 +105,14 @@ const defaultProviderUrlStub = {
   },
 };
 
+const defaultProviderRouterStub = {
+  "@/lib/provider-router": {
+    resolveProviderType(raw) {
+      return raw === "openai" ? "openai" : "gemini";
+    },
+  },
+};
+
 test("runAgentChatFromFormData validates required fields and supported agent type", async () => {
   let requestCallCount = 0;
   const moduleExports = compileTsModule(path.join(projectRoot, "lib", "server", "agent-chat", "service.ts"), {
@@ -115,6 +124,7 @@ test("runAgentChatFromFormData validates required fields and supported agent typ
     },
     ...defaultAgentSettingsStub,
     ...defaultProviderUrlStub,
+    ...defaultProviderRouterStub,
     "@google/genai": {
       GoogleGenAI: class {
         constructor() {
@@ -173,6 +183,7 @@ test("runAgentChatFromFormData sends image/history context to Gemini and normali
     },
     ...defaultAgentSettingsStub,
     ...defaultProviderUrlStub,
+    ...defaultProviderRouterStub,
     "@google/genai": {
       GoogleGenAI: class {
         constructor(config) {
@@ -256,6 +267,7 @@ test("runAgentChatFromFormData passes complete API URL without appending another
     },
     ...defaultAgentSettingsStub,
     ...defaultProviderUrlStub,
+    ...defaultProviderRouterStub,
     "@google/genai": {
       GoogleGenAI: class {
         constructor(config) {
@@ -282,6 +294,104 @@ test("runAgentChatFromFormData passes complete API URL without appending another
   assert.equal(captured.constructorConfig?.httpOptions?.apiVersion, "");
 });
 
+test("runAgentChatFromFormData uses temporary provider text model and API key for agent chat", async () => {
+  const captured = {
+    requestUrl: null,
+    requestBody: null,
+    requestHeaders: null,
+  };
+
+  const moduleExports = compileTsModule(path.join(projectRoot, "lib", "server", "agent-chat", "service.ts"), {
+    "server-only": {},
+    "@/lib/db": {
+      getSettings() {
+        return buildSettings({
+          defaultApiKey: "",
+          defaultTextModel: "",
+          defaultApiBaseUrl: "",
+          defaultProvider: "gemini",
+        });
+      },
+    },
+    ...defaultAgentSettingsStub,
+    ...defaultProviderUrlStub,
+    ...defaultProviderRouterStub,
+    "@/lib/provider-router": {
+      resolveProviderType(raw) {
+        return raw === "openai" ? "openai" : "gemini";
+      },
+    },
+    "@/lib/openai-provider": {
+      resolveOpenAIResponsesUrl(apiBaseUrl) {
+        const normalized = apiBaseUrl?.replace(/\/+$/, "") || "https://api.openai.com/v1/responses";
+        return /\/responses$/i.test(normalized) ? normalized : `${normalized}/responses`;
+      },
+    },
+    "@google/genai": {
+      GoogleGenAI: class {
+        constructor() {
+          throw new Error("Gemini client should not be used for an OpenAI temporary provider.");
+        }
+      },
+    },
+  });
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    captured.requestUrl = String(url);
+    captured.requestBody = JSON.parse(String(init?.body ?? "{}"));
+    captured.requestHeaders = init?.headers;
+    return new Response(
+      JSON.stringify({
+        output: [
+          {
+            content: [
+              {
+                type: "output_text",
+                text: JSON.stringify({
+                  assistantText: "temporary provider ok",
+                  fieldMapping: { productName: "drill bit set" },
+                }),
+              },
+            ],
+          },
+        ],
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  try {
+    const { runAgentChatFromFormData } = moduleExports;
+
+    const formData = new FormData();
+    formData.append("agentType", "image-analyst");
+    formData.append("userText", "Analyze this product.");
+    formData.append(
+      "temporaryProvider",
+      JSON.stringify({
+        provider: "openai",
+        apiKey: "browser-key",
+        apiBaseUrl: "https://example-openai.invalid/v1/responses",
+        apiHeaders: "{\"x-browser\":\"yes\"}",
+        textModel: "shared-text-model",
+        imageModel: "ignored-image-model",
+      }),
+    );
+
+    const response = await runAgentChatFromFormData(formData);
+
+    assert.equal(response.assistantText, "temporary provider ok");
+    assert.equal(captured.requestUrl, "https://example-openai.invalid/v1/responses");
+    assert.equal(captured.requestBody?.model, "shared-text-model");
+    assert.equal(captured.requestHeaders?.Authorization, "Bearer browser-key");
+    assert.equal(captured.requestHeaders?.["x-browser"], "yes");
+    assert.notEqual(captured.requestBody?.model, "ignored-image-model");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("runAgentChatFromFormData normalizes prompt-engineer promptSuggestions and keeps them structured", async () => {
   const moduleExports = compileTsModule(path.join(projectRoot, "lib", "server", "agent-chat", "service.ts"), {
     "server-only": {},
@@ -292,6 +402,7 @@ test("runAgentChatFromFormData normalizes prompt-engineer promptSuggestions and 
     },
     ...defaultAgentSettingsStub,
     ...defaultProviderUrlStub,
+    ...defaultProviderRouterStub,
     "@google/genai": {
       GoogleGenAI: class {
         constructor() {
@@ -350,6 +461,7 @@ test("runAgentChatFromFormData uses configured agent settings to replace the bui
     },
     ...defaultAgentSettingsStub,
     ...defaultProviderUrlStub,
+    ...defaultProviderRouterStub,
     "@google/genai": {
       GoogleGenAI: class {
         constructor() {
@@ -393,6 +505,7 @@ test("runAgentChatFromFormData rejects malformed conversation history", async ()
     },
     ...defaultAgentSettingsStub,
     ...defaultProviderUrlStub,
+    ...defaultProviderRouterStub,
     "@google/genai": {
       GoogleGenAI: class {
         constructor() {

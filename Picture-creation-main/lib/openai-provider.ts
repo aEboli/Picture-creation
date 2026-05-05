@@ -697,6 +697,7 @@ function buildFeaturePromptFallbackLocal(input: {
   groupIndex: number;
   groupCount: number;
   category: string;
+  imageTypePrompt?: string;
 }): string {
   return [
     `Generate one ${input.imageType} for ${input.productName || "the product"}.`,
@@ -705,6 +706,7 @@ function buildFeaturePromptFallbackLocal(input: {
     input.sellingPoints ? `Focus on: ${input.sellingPoints}.` : null,
     input.analysis.coreFeatures.length ? `Key features: ${input.analysis.coreFeatures.join(", ")}.` : null,
     input.materialInfo ? `Material: ${input.materialInfo}.` : null,
+    input.imageTypePrompt ? `Image-type prompt rule: ${input.imageTypePrompt}` : null,
     `Target ratio: ${input.ratio}. Resolution: ${input.resolutionLabel}.`,
   ]
     .filter(Boolean)
@@ -1299,9 +1301,11 @@ export async function generateFeaturePromptCopyBundle(input: {
   resolutionLabel: string;
   groupIndex: number;
   groupCount: number;
+  imageTypePrompt?: string;
 }): Promise<GeneratedCopyBundle> {
   const fallbackPrompt = buildFeaturePromptFallbackLocal(input);
   const guide = getImageTypeGuide(input.imageType as ImageType);
+  const imageTypePrompt = input.imageTypePrompt?.trim() || guide?.extraPrompt || "";
 
   const promptText = [
     "You are a concise ecommerce visual prompt expert.",
@@ -1333,7 +1337,7 @@ export async function generateFeaturePromptCopyBundle(input: {
     buildFactLine([["Material information", input.materialInfo]]),
     buildFactLine([["Size information", input.sizeInfo]]),
     guide?.intent ? `Image-type intent: ${guide.intent}` : null,
-    guide?.extraPrompt ? `Image-type visual focus: ${guide.extraPrompt}` : null,
+    imageTypePrompt ? `Image-type prompt rule: ${imageTypePrompt}` : null,
     `Image analysis JSON:\n${JSON.stringify(input.analysis, null, 2)}`,
   ]
     .filter(Boolean)

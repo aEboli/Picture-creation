@@ -15,6 +15,16 @@ import {
   readBrowserApiSettings,
   writeBrowserApiSettings,
 } from "@/lib/browser-api-settings";
+import {
+  getDefaultImageTypePrompt,
+  getImageTypeLabel,
+  getImageTypePromptTypes,
+  IMAGE_TYPE_PROMPT_MODES,
+  parseImageTypePromptOverrides,
+  serializeImageTypePromptOverrides,
+  type ImageTypePromptMode,
+  type ImageTypePromptOverrides,
+} from "@/lib/image-type-prompts";
 import type { AppSettings, UiLanguage } from "@/lib/types";
 
 type TestResult = {
@@ -40,6 +50,7 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
               gemini: "API / 中转设置",
               feishu: "飞书多维表格同步",
               storage: "素材与任务",
+              imageTypePrompts: "生图类型提示词",
             },
             labels: {
               defaultProvider: "API 提供商",
@@ -87,6 +98,7 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
               gemini: "API / relay settings",
               feishu: "Feishu Bitable sync",
               storage: "Assets and queue",
+              imageTypePrompts: "Image type prompts",
             },
             labels: {
               defaultProvider: "API Provider",
@@ -146,6 +158,34 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
     [language],
   );
 
+  const imageTypePromptModeLabels = useMemo<Record<ImageTypePromptMode, string>>(
+    () =>
+      language === "zh"
+        ? {
+            standard: "标准模式",
+            suite: "套图模式",
+            "amazon-a-plus": "亚马逊 A+",
+          }
+        : {
+            standard: "Standard",
+            suite: "Image set",
+            "amazon-a-plus": "Amazon A+",
+          },
+    [language],
+  );
+
+  const imageTypePromptOverrides = useMemo<ImageTypePromptOverrides>(() => {
+    try {
+      return parseImageTypePromptOverrides(formState.imageTypePromptOverridesJson);
+    } catch {
+      return {};
+    }
+  }, [formState.imageTypePromptOverridesJson]);
+  const imageTypePromptTotalCount = useMemo(
+    () => IMAGE_TYPE_PROMPT_MODES.reduce((total, mode) => total + getImageTypePromptTypes(mode).length, 0),
+    [],
+  );
+
   const combinedFeedback = combinedTestMessage || message;
   const globalFeedback = combinedFeedback;
   const globalFeedbackTone = useMemo(() => {
@@ -169,6 +209,22 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
 
   function patchSettings(patch: Partial<AppSettings>) {
     setFormState((current) => ({ ...current, ...patch }));
+  }
+
+  function getImageTypePromptValue(mode: ImageTypePromptMode, imageType: string) {
+    return imageTypePromptOverrides[mode]?.[imageType] ?? getDefaultImageTypePrompt(mode, imageType);
+  }
+
+  function updateImageTypePrompt(mode: ImageTypePromptMode, imageType: string, prompt: string) {
+    patchSettings({
+      imageTypePromptOverridesJson: serializeImageTypePromptOverrides({
+        ...imageTypePromptOverrides,
+        [mode]: {
+          ...imageTypePromptOverrides[mode],
+          [imageType]: prompt,
+        },
+      }),
+    });
   }
 
   function writeLocalApiSettings(settings: AppSettings) {
@@ -280,6 +336,9 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
 
     startCombinedTestTransition(async () => {
       const providerResult = await handleJsonRequest("/api/settings/test", text.actions.providerOk, text.actions.providerFailed);
+      if (providerResult.ok) {
+        writeLocalApiSettings(formState);
+      }
       const feishuResult = shouldTestFeishuConnection(formState)
         ? await handleJsonRequest("/api/settings/test-feishu", text.actions.feishuOk, text.actions.feishuFailed)
         : { ok: true, message: text.actions.feishuSkipped };
@@ -478,6 +537,35 @@ export function SettingsForm({ initialSettings, language }: { initialSettings: A
           </div>
         </section>
       </div>
+
+      <details className="panel settings-section settings-card settings-card-prompts is-prompts">
+        <summary className="settings-card-prompts-summary settings-console-card-header">
+          <h3>{text.sections.imageTypePrompts}</h3>
+          <span>{imageTypePromptTotalCount}</span>
+        </summary>
+        <div className="settings-prompt-mode-stack">
+          {IMAGE_TYPE_PROMPT_MODES.map((mode) => (
+            <details className="settings-prompt-mode" key={mode}>
+              <summary>
+                <strong>{imageTypePromptModeLabels[mode]}</strong>
+                <span>{getImageTypePromptTypes(mode).length}</span>
+              </summary>
+              <div className="settings-prompt-grid">
+                {getImageTypePromptTypes(mode).map((imageType) => (
+                  <label className="settings-prompt-field" key={`${mode}-${imageType}`}>
+                    <span>{getImageTypeLabel(imageType, language)}</span>
+                    <textarea
+                      rows={3}
+                      value={getImageTypePromptValue(mode, imageType)}
+                      onChange={(event) => updateImageTypePrompt(mode, imageType, event.target.value)}
+                    />
+                  </label>
+                ))}
+              </div>
+            </details>
+          ))}
+        </div>
+      </details>
 
       <section className="panel settings-actions-footer">
         <div className="settings-actions-status">

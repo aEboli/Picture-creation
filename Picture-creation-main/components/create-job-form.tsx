@@ -3,6 +3,7 @@
 import { type ChangeEvent, type CSSProperties, type DragEvent, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { readBrowserApiSettings } from "@/lib/browser-api-settings";
 import {
   ASPECT_RATIOS,
   COUNTRIES,
@@ -303,10 +304,12 @@ function labelFor(value: string, language: UiLanguage, options: Array<{ value: s
   return options.find((option) => option.value === value)?.label[language] ?? value;
 }
 
-function getDefaultMarketState(uiLanguage: UiLanguage) {
-  return uiLanguage === "zh"
-    ? { country: "CN", language: "zh-CN", platform: "tmall" }
-    : { country: "US", language: "en-US", platform: "amazon" };
+function getDefaultMarketState() {
+  return {
+    country: INITIAL_PAYLOAD.country,
+    language: INITIAL_PAYLOAD.language,
+    platform: INITIAL_PAYLOAD.platform,
+  };
 }
 
 export function CreateJobForm({ defaultImageModel, language }: { defaultImageModel: string; language: UiLanguage }) {
@@ -1021,7 +1024,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       return;
     }
 
-    const defaults = getDefaultMarketState(language);
+    const defaults = getDefaultMarketState();
     const defaultCountry = payload.country || defaults.country;
     const defaultLanguage = payload.language || getDefaultLanguageForCountry(defaultCountry) || defaults.language;
     const defaultPlatform = payload.creationMode === "amazon-a-plus" ? "amazon" : payload.platform || defaults.platform;
@@ -1040,7 +1043,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       language: current.language || getDefaultLanguageForCountry(current.country || defaults.country) || defaults.language,
       platform: current.creationMode === "amazon-a-plus" ? "amazon" : current.platform || defaults.platform,
     }));
-  }, [language, payload.country, payload.creationMode, payload.language, payload.platform]);
+  }, [payload.country, payload.creationMode, payload.language, payload.platform]);
 
   useEffect(() => {
     if (payload.creationMode !== "prompt") {
@@ -1259,6 +1262,12 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
       return;
     }
 
+    const browserApiSettings = readBrowserApiSettings();
+    if (!browserApiSettings.apiKey.trim()) {
+      setErrorMessage(text.apiKeyRequired);
+      return;
+    }
+
     const submitSelectedResolutions = [normalizeSelectedResolutions(selectedResolutions)[0]];
     let referenceLayoutOverride: unknown = null;
     let referencePosterCopyOverride: unknown = null;
@@ -1298,6 +1307,14 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
         referenceLayoutOverride: payload.creationMode === "reference-remix" ? null : referenceLayoutOverride,
         referencePosterCopyOverride: payload.creationMode === "reference-remix" ? null : referencePosterCopyOverride,
         uiLanguage: language,
+        temporaryProvider: {
+          provider: browserApiSettings.provider,
+          apiKey: browserApiSettings.apiKey,
+          apiBaseUrl: browserApiSettings.apiBaseUrl,
+          apiHeaders: browserApiSettings.apiHeaders,
+          textModel: browserApiSettings.textModel,
+          imageModel: browserApiSettings.imageModel,
+        },
       }),
     );
 

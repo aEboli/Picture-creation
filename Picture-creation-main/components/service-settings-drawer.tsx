@@ -11,12 +11,15 @@ import {
   readBrowserApiSettings,
   writeBrowserApiSettings,
 } from "@/lib/browser-api-settings";
+import { SERVICE_SETTINGS_QUICK_OPEN_EVENT, type ServiceSettingsQuickTarget } from "@/lib/service-settings-events";
 import type { AppSettings, ServiceDrawerSettings, UiLanguage } from "@/lib/types";
 
 type TestResult = {
   ok: boolean;
   message: string;
 };
+
+type ServiceDrawerMode = "all" | ServiceSettingsQuickTarget;
 
 function GearIcon() {
   return (
@@ -36,6 +39,7 @@ export function ServiceSettingsDrawer({
 }) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
+  const [drawerMode, setDrawerMode] = useState<ServiceDrawerMode>("all");
   const [formState, setFormState] = useState(initialSettings);
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -49,6 +53,14 @@ export function ServiceSettingsDrawer({
             close: "关闭服务配置",
             title: "服务配置",
             subtitle: "快速配置 API、飞书同步和素材输出目录。",
+            quickTitles: {
+              api: "API 快速配置",
+              feishu: "飞书快速配置",
+            },
+            quickSubtitles: {
+              api: "只调整 API Key、Responses URL 和模型。",
+              feishu: "只调整飞书同步开关、凭据和表格参数。",
+            },
             fullSettings: "完整设置页",
             sections: {
               api: "API 服务",
@@ -92,6 +104,14 @@ export function ServiceSettingsDrawer({
             close: "Close service configuration",
             title: "Service Configuration",
             subtitle: "Configure API, Feishu sync, and asset output directory.",
+            quickTitles: {
+              api: "API Quick Setup",
+              feishu: "Feishu Quick Setup",
+            },
+            quickSubtitles: {
+              api: "Only edit the API key, Responses URL, and models.",
+              feishu: "Only edit Feishu sync, credentials, and Bitable settings.",
+            },
             fullSettings: "Full settings page",
             sections: {
               api: "API service",
@@ -139,6 +159,12 @@ export function ServiceSettingsDrawer({
       ? "is-danger"
       : "is-info";
 
+  const activeTitle = drawerMode === "all" ? text.title : text.quickTitles[drawerMode];
+  const activeSubtitle = drawerMode === "all" ? text.subtitle : text.quickSubtitles[drawerMode];
+  const shouldShowApiSection = drawerMode === "all" || drawerMode === "api";
+  const shouldShowFeishuSection = drawerMode === "all" || drawerMode === "feishu";
+  const shouldShowOutputSection = drawerMode === "all";
+
   function patchSettings(patch: Partial<AppSettings>) {
     setFormState((current) => ({ ...current, ...patch }));
   }
@@ -165,6 +191,20 @@ export function ServiceSettingsDrawer({
       defaultTextModel: browserSettings.textModel,
       defaultImageModel: browserSettings.imageModel,
     }));
+  }, []);
+
+  useEffect(() => {
+    function handleQuickOpen(event: Event) {
+      const target = (event as CustomEvent<{ target?: ServiceSettingsQuickTarget }>).detail?.target;
+      if (target !== "api" && target !== "feishu") return;
+
+      setMessage("");
+      setDrawerMode(target);
+      setIsOpen(true);
+    }
+
+    window.addEventListener(SERVICE_SETTINGS_QUICK_OPEN_EVENT, handleQuickOpen);
+    return () => window.removeEventListener(SERVICE_SETTINGS_QUICK_OPEN_EVENT, handleQuickOpen);
   }, []);
 
   function buildSettingsPayloadForSave(settings: ServiceDrawerSettings): Partial<AppSettings> {
@@ -257,7 +297,29 @@ export function ServiceSettingsDrawer({
     setMessage("");
 
     startTestingTransition(async () => {
+      if (drawerMode === "api") {
+        const providerResult = await handleJsonRequest("/api/settings/test", text.actions.providerOk, text.actions.providerFailed);
+        if (providerResult.ok) {
+          writeLocalApiSettings(formState);
+        }
+        setMessage(`${providerResult.ok ? text.actions.testOk : text.actions.testFailed}: ${providerResult.message}`);
+        router.refresh();
+        return;
+      }
+
+      if (drawerMode === "feishu") {
+        const feishuResult = shouldTestFeishuConnection(formState)
+          ? await handleJsonRequest("/api/settings/test-feishu", text.actions.feishuOk, text.actions.feishuFailed)
+          : { ok: true, message: text.actions.feishuSkipped };
+        setMessage(`${feishuResult.ok ? text.actions.testOk : text.actions.testFailed}: ${feishuResult.message}`);
+        router.refresh();
+        return;
+      }
+
       const providerResult = await handleJsonRequest("/api/settings/test", text.actions.providerOk, text.actions.providerFailed);
+      if (providerResult.ok) {
+        writeLocalApiSettings(formState);
+      }
       const feishuResult = shouldTestFeishuConnection(formState)
         ? await handleJsonRequest("/api/settings/test-feishu", text.actions.feishuOk, text.actions.feishuFailed)
         : { ok: true, message: text.actions.feishuSkipped };
@@ -274,7 +336,11 @@ export function ServiceSettingsDrawer({
         aria-expanded={isOpen}
         aria-label={text.open}
         className="service-settings-gear"
-        onClick={() => setIsOpen(true)}
+        onClick={() => {
+          setMessage("");
+          setDrawerMode("all");
+          setIsOpen(true);
+        }}
         type="button"
       >
         <GearIcon />
@@ -283,11 +349,11 @@ export function ServiceSettingsDrawer({
       <div aria-hidden={!isOpen} className={`service-settings-layer ${isOpen ? "is-open" : ""}`}>
         <button aria-label={text.close} className="service-settings-backdrop" onClick={() => setIsOpen(false)} type="button" />
         <aside aria-labelledby="service-settings-title" aria-modal="true" className="service-settings-panel" id="service-settings-panel" role="dialog">
-          <form className="service-config-form" onSubmit={handleSubmit}>
+          <form className={`service-config-form service-config-form-${drawerMode}`} onSubmit={handleSubmit}>
             <header className="service-config-header">
               <div>
-                <h2 id="service-settings-title">{text.title}</h2>
-                <p>{text.subtitle}</p>
+                <h2 id="service-settings-title">{activeTitle}</h2>
+                <p>{activeSubtitle}</p>
               </div>
               <button aria-label={text.close} className="service-config-close" onClick={() => setIsOpen(false)} type="button">
                 <span aria-hidden="true">x</span>
@@ -295,7 +361,8 @@ export function ServiceSettingsDrawer({
             </header>
 
             <div className="service-config-scroll">
-              <section className="service-config-section">
+              {shouldShowApiSection ? (
+              <section className="service-config-section service-config-section-api">
                 <h3>{text.sections.api}</h3>
                 <div className="service-config-grid">
                   <label>
@@ -323,8 +390,10 @@ export function ServiceSettingsDrawer({
                   </label>
                 </div>
               </section>
+              ) : null}
 
-              <section className="service-config-section">
+              {shouldShowFeishuSection ? (
+              <section className="service-config-section service-config-section-feishu">
                 <h3>{text.sections.feishu}</h3>
                 <div className="service-config-grid">
                   <label className="service-config-check service-config-wide">
@@ -353,8 +422,10 @@ export function ServiceSettingsDrawer({
                   </label>
                 </div>
               </section>
+              ) : null}
 
-              <section className="service-config-section">
+              {shouldShowOutputSection ? (
+              <section className="service-config-section service-config-section-output">
                 <h3>{text.sections.output}</h3>
                 <div className="service-config-grid">
                   <label className="service-config-wide">
@@ -367,14 +438,17 @@ export function ServiceSettingsDrawer({
                   </label>
                 </div>
               </section>
+              ) : null}
             </div>
 
             <footer className="service-config-footer">
               {message ? <p className={`settings-feedback ${feedbackTone}`}>{message}</p> : null}
-              <div className="service-config-actions">
+              <div className={`service-config-actions ${drawerMode === "all" ? "" : "is-quick"}`}>
+                {drawerMode === "all" ? (
                 <Link className="ghost-button service-config-full-link" href="/settings" onClick={() => setIsOpen(false)}>
                   {text.fullSettings}
                 </Link>
+                ) : null}
                 <button className="primary-button" disabled={isPending || isTesting} onClick={handleConnectionTest} type="button">
                   {isTesting ? text.actions.testing : text.actions.test}
                 </button>

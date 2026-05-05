@@ -77,4 +77,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   feishuUploadParentType: "bitable_image",
   feishuFieldMappingJson: DEFAULT_FEISHU_FIELD_MAPPING,
   agentSettingsJson: serializeAgentSettingsStore(DEFAULT_AGENT_SETTINGS_STORE),
+  imageTypePromptOverridesJson: "{}",
 };

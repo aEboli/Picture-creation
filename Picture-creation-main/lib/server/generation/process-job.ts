@@ -34,6 +34,7 @@ import {
 } from "@/lib/db";
 import { syncJobToFeishu } from "@/lib/feishu";
 import { meetsRequestedResolutionBucket } from "@/lib/image-size-policy";
+import { resolveImageTypePrompt } from "@/lib/image-type-prompts";
 import { readAssetBuffer, writeFileAsset } from "@/lib/storage";
 import { buildPromptModeCopyBundle } from "@/lib/templates";
 import type { GeneratedCopyBundle, ProviderOverride, VisualAudit } from "@/lib/types";
@@ -378,6 +379,13 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
             })()
           : null;
       const currentWorkflowAnalysis = workflowAnalysis;
+      const imageTypePrompt = structuredAgentMode
+        ? resolveImageTypePrompt({
+            overridesJson: settings.imageTypePromptOverridesJson,
+            mode: structuredAgentMode,
+            imageType: item.imageType,
+          })
+        : undefined;
 
       copy =
         structuredAgentMode && currentStructuredFeatureAnalysis
@@ -406,6 +414,7 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
                     resolutionLabel: item.resolutionLabel,
                     groupIndex: item.variantIndex,
                     groupCount: job.variantsPerType,
+                    imageTypePrompt: imageTypePrompt,
                   }),
                 )
               : generateFeaturePromptCopyBundle({
@@ -431,6 +440,7 @@ export async function processJob(jobId: string, providerOverride?: ProviderOverr
                   resolutionLabel: item.resolutionLabel,
                   groupIndex: item.variantIndex,
                   groupCount: job.variantsPerType,
+                  imageTypePrompt: imageTypePrompt,
                 }))
           : workflowMode
           ? await (providerType === "openai"

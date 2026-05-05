@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 
 import { ImageLightbox } from "@/components/image-lightbox";
 import { DEFAULT_AGENT_SETTINGS_STORE } from "@/lib/agent-settings";
+import { readBrowserApiSettings } from "@/lib/browser-api-settings";
 import type { AgentProfileSettings, AgentSettingsStore } from "@/lib/types";
 import {
   normalizeAgentHistoryMessages,
@@ -373,6 +374,21 @@ export function CreateAgentPanel() {
       formData.append("agentType", agent);
       formData.append("userText", fallbackPromptText);
       formData.append("conversationHistory", JSON.stringify(toConversationHistory(nextConversationMessages)));
+
+      const browserApiSettings = readBrowserApiSettings();
+      if (browserApiSettings.apiKey.trim()) {
+        formData.append(
+          "temporaryProvider",
+          JSON.stringify({
+            provider: browserApiSettings.provider,
+            apiKey: browserApiSettings.apiKey,
+            apiBaseUrl: browserApiSettings.apiBaseUrl,
+            apiHeaders: browserApiSettings.apiHeaders,
+            textModel: browserApiSettings.textModel,
+            imageModel: browserApiSettings.imageModel,
+          }),
+        );
+      }
 
       if (imageFile) {
         formData.append("image", imageFile);

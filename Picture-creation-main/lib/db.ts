@@ -440,6 +440,10 @@ function ensureSettingsColumns(database: DatabaseSync) {
       name: "default_provider",
       statement: "ALTER TABLE settings ADD COLUMN default_provider TEXT NOT NULL DEFAULT 'gemini'",
     },
+    {
+      name: "image_type_prompt_overrides_json",
+      statement: "ALTER TABLE settings ADD COLUMN image_type_prompt_overrides_json TEXT NOT NULL DEFAULT '{}'",
+    },
   ];
 
   for (const column of columnDefinitions) {
@@ -642,6 +646,7 @@ function ensureSchema(database: DatabaseSync) {
       feishu_upload_parent_type TEXT NOT NULL DEFAULT 'bitable_image',
       feishu_field_mapping_json TEXT NOT NULL DEFAULT '{}',
       agent_settings_json TEXT NOT NULL DEFAULT '{}',
+      image_type_prompt_overrides_json TEXT NOT NULL DEFAULT '{}',
       templates_retired INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -894,6 +899,7 @@ export function getSettings(): AppSettings {
     feishuUploadParentType: row.feishu_upload_parent_type ?? "bitable_image",
     feishuFieldMappingJson: row.feishu_field_mapping_json ?? "{}",
     agentSettingsJson: row.agent_settings_json ?? "{}",
+    imageTypePromptOverridesJson: row.image_type_prompt_overrides_json ?? "{}",
   };
 }
 
@@ -919,6 +925,7 @@ export function updateSettings(input: Partial<AppSettings>): AppSettings {
     feishuUploadParentType: input.feishuUploadParentType ?? settings.feishuUploadParentType,
     feishuFieldMappingJson: input.feishuFieldMappingJson ?? settings.feishuFieldMappingJson,
     agentSettingsJson: input.agentSettingsJson ?? settings.agentSettingsJson,
+    imageTypePromptOverridesJson: input.imageTypePromptOverridesJson ?? settings.imageTypePromptOverridesJson,
   };
 
   database
@@ -942,6 +949,7 @@ export function updateSettings(input: Partial<AppSettings>): AppSettings {
         feishu_upload_parent_type = ?,
         feishu_field_mapping_json = ?,
         agent_settings_json = ?,
+        image_type_prompt_overrides_json = ?,
         updated_at = ?
       WHERE id = 1`
     )
@@ -964,6 +972,7 @@ export function updateSettings(input: Partial<AppSettings>): AppSettings {
       nextSettings.feishuUploadParentType,
       nextSettings.feishuFieldMappingJson,
       nextSettings.agentSettingsJson,
+      nextSettings.imageTypePromptOverridesJson,
       nowIso(),
     );
 

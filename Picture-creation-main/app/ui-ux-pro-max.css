@@ -3427,6 +3427,124 @@ input[type="file"]::file-selector-button:hover {
   grid-area: storage;
 }
 
+.settings-card-prompts {
+  display: grid;
+  gap: 14px;
+  min-height: auto;
+  scroll-margin-top: 16px;
+}
+
+.settings-card-prompts-summary {
+  min-height: 48px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-card-prompts-summary::-webkit-details-marker,
+.settings-prompt-mode summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-card-prompts-summary span {
+  min-width: 34px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(240, 182, 58, 0.13);
+  color: #ffe0a3;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.settings-card-prompts:not([open]) {
+  padding-block: 14px;
+}
+
+.settings-card-prompts:not([open]) > .settings-prompt-mode-stack {
+  display: none;
+}
+
+.settings-card-prompts[open] .settings-prompt-mode-stack {
+  max-height: min(64dvh, 720px);
+  overflow: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.settings-prompt-mode-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-prompt-mode {
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+  padding-top: 10px;
+}
+
+.settings-prompt-mode:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.settings-prompt-mode summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  color: var(--ui-text-strong);
+}
+
+.settings-prompt-mode summary span {
+  min-width: 32px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(240, 182, 58, 0.13);
+  color: #ffe0a3;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.settings-prompt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 8px 0 4px;
+}
+
+.settings-prompt-mode[open] .settings-prompt-grid {
+  max-height: min(48dvh, 520px);
+  overflow: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.settings-prompt-field textarea {
+  min-height: 104px;
+  border-radius: 14px;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 1023px) {
+  .settings-prompt-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .settings-prompt-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .settings-guide-card ul {
   margin: var(--space-12) 0 0;
   padding-left: var(--space-24);
@@ -6562,6 +6680,31 @@ select {
   font-size: 0.72rem;
 }
 
+.sidebar-status-chip-button {
+  width: 100%;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.sidebar-status-chip-button:hover,
+.sidebar-status-chip-button:focus-visible {
+  color: var(--ui-text-strong);
+  background: rgba(255, 255, 255, 0.075);
+  transform: translateX(1px);
+}
+
+.sidebar-status-chip-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--status-color, #44a9ff) 64%, transparent);
+  outline-offset: 2px;
+}
+
 .sidebar-status-dot {
   width: 6px;
   height: 6px;
@@ -8184,6 +8327,10 @@ select {
   align-items: center;
 }
 
+.service-config-actions.is-quick {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .service-config-actions .primary-button,
 .service-config-full-link {
   min-height: 40px;
@@ -8211,7 +8358,6 @@ select {
   }
 
   .service-config-grid,
-  .create-api-settings-grid,
   .service-config-actions {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -8483,7 +8629,7 @@ select {
     "assets assets assets assets market market market settings settings settings submit submit";
   grid-template-columns: repeat(12, minmax(0, 1fr));
   grid-template-rows: minmax(0, 1fr) auto;
-  gap: 12px;
+  gap: 0;
   align-items: stretch;
   overflow: hidden;
   padding-top: 0;
@@ -8526,9 +8672,10 @@ select {
 .create-area-panel-stage {
   display: grid;
   height: 100%;
-  gap: 12px;
+  gap: 10px;
   overflow: auto;
   align-content: start;
+  padding: 10px;
   scrollbar-width: thin;
 }
 
@@ -8587,6 +8734,23 @@ select {
   min-height: clamp(320px, 58dvh, 680px);
 }
 
+.create-workspace.is-reference-mode .create-area-panel-stage.is-assets {
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  align-content: stretch;
+}
+
+.create-workspace.is-reference-mode .create-area-panel-stage.is-assets .create-source-panel,
+.create-workspace.is-reference-mode .create-area-panel-stage.is-assets .create-reference-panel {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.create-workspace.is-reference-mode .create-area-panel-stage.is-assets .preview-stage,
+.create-workspace.is-reference-mode .create-area-panel-stage.is-assets .preview-stage-image {
+  min-height: 0;
+}
+
 .create-area-panel-stage.is-brief .create-base-panel,
 .create-area-panel-stage.is-settings .create-output-panel,
 .create-area-panel-stage.is-submit .create-submit-panel {
@@ -8622,44 +8786,8 @@ select {
   padding: 12px;
 }
 
-.create-area-panel-stage.is-settings .create-api-settings-grid,
 .create-area-panel-stage.is-brief .create-market-panel .create-mode-panel-meta {
   grid-template-columns: minmax(0, 1fr);
-}
-
-.create-api-settings-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.create-api-settings-grid label {
-  display: grid;
-  gap: 7px;
-  min-width: 0;
-  color: var(--ui-text-muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.create-api-settings-grid input,
-.create-api-settings-grid textarea {
-  width: 100%;
-  min-width: 0;
-  min-height: 40px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-  background: rgba(5, 9, 18, 0.76);
-  color: var(--ui-text-strong);
-  font-size: 0.86rem;
-}
-
-.create-api-settings-grid textarea {
-  resize: vertical;
-}
-
-.create-api-settings-wide {
-  grid-column: 1 / -1;
 }
 
 .create-area-panel-stage.is-settings .chip-grid-types,
@@ -8725,7 +8853,7 @@ select {
       "settings"
       "submit";
     grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
+    gap: 0;
   }
 
   .create-area-panel:not(.is-active) {
@@ -8940,6 +9068,12 @@ html[data-theme="light"] .sidebar-toggle:hover {
   color: #1d4ed8;
 }
 
+html[data-theme="light"] .sidebar-status-chip-button:hover,
+html[data-theme="light"] .sidebar-status-chip-button:focus-visible {
+  background: rgba(37, 99, 235, 0.07);
+  color: #0f172a;
+}
+
 html[data-theme="light"] .sidebar-link {
   color: #667085;
 }
@@ -9057,7 +9191,6 @@ html[data-theme="light"] :where(.helper,
 .service-config-header p,
 .service-config-footer p,
 .service-config-grid label,
-.create-api-settings-grid label,
 .create-mode-panel-meta dt,
 .overview-recent-meta,
 .history-table-helper,
@@ -9392,8 +9525,6 @@ html[data-theme="light"] .service-config-section {
 
 html[data-theme="light"] .service-config-grid input,
 html[data-theme="light"] .service-config-grid select,
-html[data-theme="light"] .create-api-settings-grid input,
-html[data-theme="light"] .create-api-settings-grid textarea,
 html[data-theme="light"] .create-agent-settings-field input,
 html[data-theme="light"] .create-agent-settings-field textarea {
   border-color: rgba(99, 111, 129, 0.22);

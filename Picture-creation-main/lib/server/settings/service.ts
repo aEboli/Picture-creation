@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { testFeishuConnection } from "@/lib/feishu";
 import { formatFeishuFieldMapping, parseFeishuFieldMapping } from "@/lib/feishu-field-mapping";
+import { parseImageTypePromptOverrides, serializeImageTypePromptOverrides } from "@/lib/image-type-prompts";
 import {
   buildMultimodalDiagnosticBranchConfig,
   buildMultimodalDiagnosticPrompt,
@@ -42,6 +43,7 @@ export function updateSettingsFromInput(input: Partial<AppSettings> | null | und
   try {
     validateHeadersJson(body.defaultApiHeaders);
     validateFeishuFieldMappingJson(body.feishuFieldMappingJson);
+    validateImageTypePromptOverridesJson(body.imageTypePromptOverridesJson);
   } catch (error) {
     throw new SettingsServiceError(error instanceof Error ? error.message : "Invalid headers JSON.", 400);
   }
@@ -50,9 +52,25 @@ export function updateSettingsFromInput(input: Partial<AppSettings> | null | und
     ...body,
     feishuFieldMappingJson:
       body.feishuFieldMappingJson === undefined ? undefined : formatFeishuFieldMapping(body.feishuFieldMappingJson),
+    imageTypePromptOverridesJson:
+      body.imageTypePromptOverridesJson === undefined
+        ? undefined
+        : serializeImageTypePromptOverrides(parseImageTypePromptOverrides(body.imageTypePromptOverridesJson)),
   };
 
   return updateSettingsSnapshot(normalizedBody);
+}
+
+function validateImageTypePromptOverridesJson(value: string | undefined) {
+  if (value === undefined) {
+    return;
+  }
+
+  try {
+    parseImageTypePromptOverrides(value);
+  } catch {
+    throw new Error("Invalid image type prompt settings JSON.");
+  }
 }
 
 function mergeSettingsForSecretAwareRequest(input: Partial<AppSettings> | null | undefined): AppSettings {
@@ -122,6 +140,7 @@ export async function testFeishuConnectionFromInput(input: Partial<AppSettings> 
     feishuUploadParentType: body.feishuUploadParentType || "bitable_image",
     feishuFieldMappingJson: body.feishuFieldMappingJson || "{}",
     agentSettingsJson: "{}",
+    imageTypePromptOverridesJson: "{}",
   });
 }
 

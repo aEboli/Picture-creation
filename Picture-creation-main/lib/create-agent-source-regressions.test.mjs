@@ -21,6 +21,7 @@ test("navigation only renders create-agent entry on /create and places it in hea
 test("create-agent panel uses local conversation state and calls the backend chat route", () => {
   const content = read("components", "create-agent-panel.tsx");
 
+  assert.match(content, /readBrowserApiSettings/);
   assert.match(content, /const CREATE_FORM_MAPPING_EVENT = "create-agent:map-to-form";/);
   assert.match(content, /createPortal\(/);
   assert.match(content, /document\.body/);
@@ -32,6 +33,9 @@ test("create-agent panel uses local conversation state and calls the backend cha
   assert.match(content, /const \[pendingHistoryMapDetail, setPendingHistoryMapDetail\] = useState/);
   assert.match(content, /const \[lightboxIndex, setLightboxIndex\] = useState/);
   assert.match(content, /fetch\("\/api\/agent-chat"/);
+  assert.match(content, /formData\.append\(\s*"temporaryProvider"/);
+  assert.match(content, /textModel:\s*browserApiSettings\.textModel/);
+  assert.doesNotMatch(content, /agentModel/);
   assert.match(content, /conversationHistory/);
   assert.match(content, /映射到表单/);
   assert.match(content, /DEFAULT_AGENT_SETTINGS_STORE/);

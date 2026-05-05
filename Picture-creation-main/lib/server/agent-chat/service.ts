@@ -4,7 +4,9 @@ import { GoogleGenAI } from "@google/genai";
 
 import { resolveAgentProfileSettings } from "@/lib/agent-settings";
 import { getSettings } from "@/lib/db";
+import { resolveProviderType } from "@/lib/provider-router";
 import { resolveProviderEndpoint } from "@/lib/provider-url";
+import type { ProviderOverride } from "@/lib/types";
 
 const SUPPORTED_AGENT_TYPES = ["image-analyst", "prompt-engineer"] as const;
 type AgentType = (typeof SUPPORTED_AGENT_TYPES)[number];
@@ -95,6 +97,52 @@ function parseHeadersJson(rawHeaders?: string): Record<string, string> | undefin
   }
 
   return headers;
+}
+
+function readProviderString(input: Record<string, unknown>, key: keyof ProviderOverride) {
+  const value = input[key];
+  return typeof value === "string" ? value.trim() : undefined;
+}
+
+function parseTemporaryProvider(formData: FormData): ProviderOverride | undefined {
+  const rawProvider = formData.get("temporaryProvider");
+  if (typeof rawProvider !== "string" || !rawProvider.trim()) {
+    return undefined;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawProvider);
+  } catch {
+    throw new AgentChatRequestError("temporaryProvider must be valid JSON.", 400);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new AgentChatRequestError("temporaryProvider must be a JSON object.", 400);
+  }
+
+  const source = parsed as Record<string, unknown>;
+  const provider = readProviderString(source, "provider");
+  const apiKey = readProviderString(source, "apiKey");
+  const apiBaseUrl = readProviderString(source, "apiBaseUrl");
+  const apiVersion = readProviderString(source, "apiVersion");
+  const apiHeaders = typeof source.apiHeaders === "string" ? source.apiHeaders : undefined;
+  const textModel = readProviderString(source, "textModel");
+  const imageModel = readProviderString(source, "imageModel");
+
+  if (!provider && !apiKey && !apiBaseUrl && !apiVersion && !apiHeaders && !textModel && !imageModel) {
+    return undefined;
+  }
+
+  return {
+    provider,
+    apiKey,
+    apiBaseUrl,
+    apiVersion,
+    apiHeaders,
+    textModel,
+    imageModel,
+  };
 }
 
 function normalizeAgentType(rawAgentType: FormDataEntryValue | null): AgentType {
@@ -252,9 +300,105 @@ function normalizeAssistantResponse(raw: Record<string, unknown>): AgentChatResp
   };
 }
 
+function extractOpenAITextFromResponse(response: any): string {
+  if (Array.isArray(response?.output)) {
+    for (const item of response.output) {
+      if (Array.isArray(item?.content)) {
+        for (const part of item.content) {
+          if (part?.type === "output_text" && typeof part.text === "string") {
+            return part.text;
+          }
+        }
+      }
+    }
+  }
+
+  const chatContent = response?.choices?.[0]?.message?.content;
+  return typeof chatContent === "string" ? chatContent : "";
+}
+
+async function createOpenAIAgentHttpError(response: Response): Promise<AgentChatRequestError> {
+  const raw = await response.text().catch(() => "");
+  let message = raw.trim();
+
+  if (message) {
+    try {
+      const parsed = JSON.parse(message) as { error?: { message?: string }; message?: string };
+      message = parsed.error?.message || parsed.message || message;
+    } catch {
+      // Keep the raw provider response when it is not JSON.
+    }
+  }
+
+  return new AgentChatRequestError(message || `OpenAI Responses request failed with HTTP ${response.status}.`, response.status === 401 ? 401 : 502);
+}
+
+async function runOpenAIAgentChat(input: {
+  apiKey: string;
+  textModel: string;
+  apiBaseUrl?: string;
+  apiHeaders?: string;
+  agentType: AgentType;
+  imagePart: Awaited<ReturnType<typeof readOptionalImage>>;
+  promptText: string;
+}): Promise<AgentChatResponse> {
+  const { resolveOpenAIResponsesUrl } = await import("@/lib/openai-provider");
+  const content: Array<{ type: "input_image"; image_url: string } | { type: "input_text"; text: string }> = [];
+  if (input.imagePart) {
+    content.push({
+      type: "input_image",
+      image_url: `data:${input.imagePart.mimeType};base64,${input.imagePart.data}`,
+    });
+  }
+  content.push({
+    type: "input_text",
+    text: input.promptText,
+  });
+
+  const response = await fetch(resolveOpenAIResponsesUrl(input.apiBaseUrl), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${input.apiKey}`,
+      "Content-Type": "application/json",
+      ...(parseHeadersJson(input.apiHeaders) ?? {}),
+    },
+    body: JSON.stringify({
+      model: input.textModel,
+      input: [
+        {
+          role: "user",
+          content,
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "agent_chat_response",
+          schema: AGENT_CHAT_RESPONSE_SCHEMA,
+        },
+      },
+      temperature: input.agentType === "image-analyst" ? 0.15 : 0.25,
+    }),
+  });
+
+  if (!response.ok) {
+    throw await createOpenAIAgentHttpError(response);
+  }
+
+  return normalizeAssistantResponse(parseModelJson(extractOpenAITextFromResponse(await response.json())));
+}
+
 export async function runAgentChatFromFormData(formData: FormData): Promise<AgentChatResponse> {
   const settings = getSettings();
-  if (!settings.defaultApiKey.trim() || !settings.defaultTextModel.trim()) {
+  const temporaryProvider = parseTemporaryProvider(formData);
+  const apiKey = temporaryProvider?.apiKey?.trim() || settings.defaultApiKey.trim();
+  const textModel = temporaryProvider?.textModel?.trim() || settings.defaultTextModel.trim();
+  const apiBaseUrl = temporaryProvider?.apiBaseUrl ?? settings.defaultApiBaseUrl;
+  const apiVersion = temporaryProvider?.apiVersion ?? settings.defaultApiVersion;
+  const apiHeaders = temporaryProvider?.apiHeaders ?? settings.defaultApiHeaders;
+  const providerType = resolveProviderType(temporaryProvider?.provider ?? settings.defaultProvider);
+
+  if (!apiKey || !textModel) {
     throw new AgentChatRequestError("API key and text model must be configured in Settings.", 400);
   }
 
@@ -263,14 +407,32 @@ export async function runAgentChatFromFormData(formData: FormData): Promise<Agen
   const history = parseConversationHistory(formData);
   const imagePart = await readOptionalImage(formData);
   const endpoint = resolveProviderEndpoint({
-    apiBaseUrl: settings.defaultApiBaseUrl,
-    apiVersion: settings.defaultApiVersion,
+    apiBaseUrl,
+    apiVersion,
   });
-  const headers = parseHeadersJson(settings.defaultApiHeaders);
+  const headers = parseHeadersJson(apiHeaders);
   const agentSettings = resolveAgentProfileSettings(settings.agentSettingsJson, agentType);
+  const promptText = `${agentSettings.systemPrompt}\n\n${buildUserPrompt({
+    agentType,
+    userText,
+    history,
+    hasImage: Boolean(imagePart),
+  })}`;
+
+  if (providerType === "openai") {
+    return runOpenAIAgentChat({
+      apiKey,
+      textModel,
+      apiBaseUrl,
+      apiHeaders,
+      agentType,
+      imagePart,
+      promptText,
+    });
+  }
 
   const client = new GoogleGenAI({
-    apiKey: settings.defaultApiKey,
+    apiKey,
     httpOptions: {
       baseUrl: endpoint.baseUrl,
       apiVersion: endpoint.apiVersion,
@@ -285,16 +447,11 @@ export async function runAgentChatFromFormData(formData: FormData): Promise<Agen
     });
   }
   contents.push({
-    text: `${agentSettings.systemPrompt}\n\n${buildUserPrompt({
-      agentType,
-      userText,
-      history,
-      hasImage: Boolean(imagePart),
-    })}`,
+    text: promptText,
   });
 
   const response = await client.models.generateContent({
-    model: settings.defaultTextModel,
+    model: textModel,
     contents,
     config: {
       responseMimeType: "application/json",

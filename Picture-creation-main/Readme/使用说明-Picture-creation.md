@@ -6,9 +6,9 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 当前版本 | `v0.8.0` |
+| 当前版本 | `v0.9.0` |
 | GitHub 仓库 | [aEboli/Picture-creation](https://github.com/aEboli/Picture-creation) |
-| Inno 安装器 | `PICTURE-CREATION-WINDOWS-0.8.0.exe` |
+| Inno 安装器 | `PICTURE-CREATION-WINDOWS-0.9.0.exe` |
 | 绿色发布目录 | `release/picture-creation` |
 | 默认文本模型 | `gemini-3.1-flash-lite-preview` |
 | 默认图片模型 | `gemini-3.1-flash-image-preview` |
@@ -27,7 +27,7 @@
 
 ### 安装器方式
 
-1. 运行 `PICTURE-CREATION-WINDOWS-0.8.0.exe`。
+1. 运行 `PICTURE-CREATION-WINDOWS-0.9.0.exe`。
 2. 安装完成后，桌面会生成 `Picture-creation.lnk`。
 3. 首次打开后，浏览器默认访问 `http://127.0.0.1:3000`。
 
@@ -41,15 +41,22 @@
 
 进入“设置”页后，按顺序完成：
 
-1. 填写 Gemini 官方接口或兼容 relay 的 API 配置。
-2. 点击 `全局连接测试`，先确认 `Gemini / 中转` 与 `飞书` 的聚合反馈结果。
-3. 点击 `保存全部设置` 持久化整页配置。
-4. 如需飞书同步，再继续调整 Bitable 与字段映射 JSON。
+1. 填写 Gemini、OpenAI Responses 或兼容 relay 的 API 配置。
+2. 点击 `全局连接测试`，先确认 API 与飞书的聚合反馈结果。
+3. API 测试成功后，当前浏览器会同步记住 API Key、API URL、文本模型和图片模型，后续生成与智能体调用可直接复用。
+4. 点击 `保存全部设置` 持久化整页非浏览器态配置。
+5. 如需飞书同步，再继续调整 Bitable 与字段映射 JSON。
 
 推荐默认模型：
 
 - 文本：`gemini-3.1-flash-lite-preview`
 - 图片：`gemini-3.1-flash-image-preview`
+
+补充说明：
+
+- 创建页提交生成前会检查浏览器本地 API Key；未配置时会直接提示先完成 API 配置。
+- 侧栏底部的 `API` 与 `飞书` 状态胶囊可以直接打开对应快捷配置抽屉。
+- OpenAI 兼容 provider 的创建页智能体会走 Responses API，并使用文本模型字段，不会误用图片模型字段。
 
 ## 5. 五种创建模式
 
@@ -81,7 +88,9 @@
 
 - 主导航：`总览 / 创作台 / 历史记录 / 设置 / 品牌库`
 - 创建页：头部中区聚合 `智能体入口 + 主导航`
+- 创作台：素材、内容简报、输出参数和生成按钮保持在同一工作台表面
 - 设置页：紧凑控制中心，底部统一提供 `全局连接测试` 与 `保存全部设置`
+- 设置页：新增折叠的 `生图类型提示词` 面板，可调标准模式、套图模式和亚马逊 A+ 模式的图型提示词
 - 品牌库：独立页面维护品牌规则，不再混在设置页
 - 模板中心：旧 `/templates` 路由已退役，不再作为当前主入口
 
@@ -121,7 +130,7 @@ npm run package:installer:exe:safe
 
 1. `npm run typecheck` 通过。
 2. 与本次发布相关的源码回归测试通过。
-3. 安装器成功生成，且文件名为 `PICTURE-CREATION-WINDOWS-0.8.0.exe`。
+3. 安装器成功生成，且文件名为 `PICTURE-CREATION-WINDOWS-0.9.0.exe`。
 4. 新安装目录能够正常打开首页，不出现 `500`。
 5. 五种模式至少各跑通一次创建流程。
 6. 历史记录、设置中心、品牌库、飞书测试链路可正常打开。

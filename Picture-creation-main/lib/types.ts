@@ -59,6 +59,7 @@ export interface AppSettings {
   feishuUploadParentType: string;
   feishuFieldMappingJson: string;
   agentSettingsJson: string;
+  imageTypePromptOverridesJson: string;
 }
 
 export interface ServiceDrawerSettings extends AppSettings {

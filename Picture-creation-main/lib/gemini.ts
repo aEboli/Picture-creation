@@ -2839,6 +2839,7 @@ function buildFeaturePromptFallback(input: {
   groupIndex: number;
   groupCount: number;
   category: string;
+  imageTypePrompt?: string;
 }): string {
   const guide = getImageTypeGuide(input.imageType as ImageType);
   const scenarioPlan = buildFeaturePromptScenarioPlan({
@@ -2874,7 +2875,7 @@ function buildFeaturePromptFallback(input: {
     input.analysis.visualCharacteristics.length
       ? `Visual cues: ${input.analysis.visualCharacteristics.slice(0, 3).join(", ")}.`
       : null,
-    guide?.extraPrompt || null,
+    input.imageTypePrompt ? `Image-type prompt rule: ${input.imageTypePrompt}` : guide?.extraPrompt || null,
     input.productName ? "Use the product name as a helper hint only when it agrees with the image." : null,
     input.brandName ? `Brand: ${input.brandName}.` : null,
     input.sellingPoints ? `Selling points: ${trimWorkflowString(input.sellingPoints)}.` : null,
@@ -2988,10 +2989,12 @@ export async function generateFeaturePromptCopyBundle(input: {
   resolutionLabel: string;
   groupIndex: number;
   groupCount: number;
+  imageTypePrompt?: string;
 }): Promise<GeneratedCopyBundle> {
   const fallbackPrompt = buildFeaturePromptFallback(input);
   const ai = createClient(input);
   const guide = getImageTypeGuide(input.imageType as ImageType);
+  const imageTypePrompt = input.imageTypePrompt?.trim() || guide?.extraPrompt || "";
   const scenarioPlan = buildFeaturePromptScenarioPlan({
     imageType: input.imageType,
     analysis: input.analysis,
@@ -3044,7 +3047,7 @@ export async function generateFeaturePromptCopyBundle(input: {
         buildPromptFactLine([["Material information", input.materialInfo]]),
         buildPromptFactLine([["Size information", input.sizeInfo]]),
         guide?.intent ? `Image-type intent: ${guide.intent}` : null,
-        guide?.extraPrompt ? `Image-type visual focus: ${guide.extraPrompt}` : null,
+        imageTypePrompt ? `Image-type prompt rule: ${imageTypePrompt}` : null,
         `Scenario planning hint (not a fixed template): ${scenarioPlan.family}.`,
         `Suggested marketing intent: ${scenarioPlan.marketingIntent}`,
         `Suggested scene direction: ${scenarioPlan.sceneDirection}`,

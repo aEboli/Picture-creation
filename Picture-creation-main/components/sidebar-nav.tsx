@@ -5,13 +5,14 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { UiLanguage } from "@/lib/types";
 
 import { CreateAgentPanel } from "@/components/create-agent-panel";
 import { LanguageToggle } from "@/components/language-toggle";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SERVICE_SETTINGS_QUICK_OPEN_EVENT, type ServiceSettingsQuickTarget } from "@/lib/service-settings-events";
 
 type IntegrationState = "ready" | "partial" | "inactive";
 
@@ -70,6 +71,7 @@ export function SidebarNav({
   const normalizedPathname = pathname?.startsWith("/jobs/") ? "/history" : pathname;
   const isCreatePage = normalizedPathname === "/create";
   const [collapsed, setCollapsed] = useState(false);
+  const [quickActionsReady, setQuickActionsReady] = useState(false);
 
   const links = [
     { href: "/", label: language === "zh" ? "总览" : "Overview", icon: "overview" },
@@ -79,10 +81,18 @@ export function SidebarNav({
   ];
 
   const integrationChips = [
-    { label: "API", state: integrations.gemini },
-    { label: language === "zh" ? "飞书" : "Feishu", state: integrations.feishu },
+    { label: "API", state: integrations.gemini, quickTarget: "api" as const },
+    { label: language === "zh" ? "飞书" : "Feishu", state: integrations.feishu, quickTarget: "feishu" as const },
     { label: "LAN", state: integrations.lan },
   ];
+
+  function openQuickSettings(target: ServiceSettingsQuickTarget) {
+    window.dispatchEvent(new CustomEvent(SERVICE_SETTINGS_QUICK_OPEN_EVENT, { detail: { target } }));
+  }
+
+  useEffect(() => {
+    setQuickActionsReady(true);
+  }, []);
 
   return (
     <>
@@ -131,16 +141,30 @@ export function SidebarNav({
         <div className="sidebar-footer">
           {!collapsed && (
             <div className="sidebar-status">
-              {integrationChips.map((chip) => (
-                <div
-                  className="sidebar-status-chip"
-                  key={chip.label}
-                  style={{ "--status-color": getStatusColor(chip.state) } as CSSProperties}
-                >
-                  <span className="sidebar-status-dot" />
-                  <span>{chip.label}</span>
-                </div>
-              ))}
+              {integrationChips.map((chip) =>
+                chip.quickTarget && quickActionsReady ? (
+                  <button
+                    aria-label={language === "zh" ? `快速配置${chip.label}` : `Quick configure ${chip.label}`}
+                    className="sidebar-status-chip sidebar-status-chip-button"
+                    key={chip.label}
+                    onClick={() => openQuickSettings(chip.quickTarget)}
+                    style={{ "--status-color": getStatusColor(chip.state) } as CSSProperties}
+                    type="button"
+                  >
+                    <span className="sidebar-status-dot" />
+                    <span>{chip.label}</span>
+                  </button>
+                ) : (
+                  <div
+                    className="sidebar-status-chip"
+                    key={chip.label}
+                    style={{ "--status-color": getStatusColor(chip.state) } as CSSProperties}
+                  >
+                    <span className="sidebar-status-dot" />
+                    <span>{chip.label}</span>
+                  </div>
+                ),
+              )}
             </div>
           )}
           <ThemeToggle language={language} compact={collapsed} />
