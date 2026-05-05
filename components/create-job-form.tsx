@@ -1739,6 +1739,37 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
     }));
   }
 
+  const imageTypeFieldset = isStructuredCommerceMode ? (
+    <fieldset className="create-generation-fieldset create-generation-fieldset-types">
+      <legend>
+        <span>{activeModeProfile.typeTitle}</span>
+        <span className="create-generation-legend-note">({text.typesUnit})</span>
+      </legend>
+      <div className="chip-grid chip-grid-types small">
+        {IMAGE_TYPE_OPTIONS.map((option) => {
+          const isDisabled = option.value === "size-spec" && !hasStructuredSizeInfo;
+          const isAutoSizeType = option.value === "size-spec" && hasStructuredSizeInfo;
+          const isChecked = isAutoSizeType ? true : selectedTypes.includes(option.value);
+          return (
+            <label
+              className={isChecked ? "chip is-active" : "chip"}
+              key={option.value}
+              title={option.description?.[language]}
+            >
+              <input
+                checked={isChecked}
+                disabled={isDisabled || isAutoSizeType}
+                onChange={() => toggleSelection(option.value, selectedTypes, setSelectedTypes)}
+                type="checkbox"
+              />
+              <span>{option.label[language]}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
+  ) : null;
+
   const creationModeSelector = (
     <div
       aria-label={language === "zh" ? "模式选择" : "Mode selection"}
@@ -2326,36 +2357,6 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
                   </div>
                   <aside className={`create-base-side ${activeModeClassName}`}>
                     <div className="create-base-side-stack">
-                      {isStructuredCommerceMode ? (
-                        <fieldset className="create-generation-fieldset create-generation-fieldset-types">
-                          <legend>
-                            <span>{activeModeProfile.typeTitle}</span>
-                            <span className="create-generation-legend-note">({text.typesUnit})</span>
-                          </legend>
-                          <div className="chip-grid small">
-                            {IMAGE_TYPE_OPTIONS.map((option) => {
-                              const isDisabled = option.value === "size-spec" && !hasStructuredSizeInfo;
-                              const isAutoSizeType = option.value === "size-spec" && hasStructuredSizeInfo;
-                              const isChecked = isAutoSizeType ? true : selectedTypes.includes(option.value);
-                              return (
-                                <label
-                                  className={isChecked ? "chip is-active" : "chip"}
-                                  key={option.value}
-                                  title={option.description?.[language]}
-                                >
-                                  <input
-                                    checked={isChecked}
-                                    disabled={isDisabled || isAutoSizeType}
-                                    onChange={() => toggleSelection(option.value, selectedTypes, setSelectedTypes)}
-                                    type="checkbox"
-                                  />
-                                  <span>{option.label[language]}</span>
-                                </label>
-                              );
-                            })}
-                          </div>
-                        </fieldset>
-                      ) : null}
                       <fieldset className="create-generation-fieldset create-generation-fieldset-ratios">
                         <legend>
                           <span>{activeModeProfile.ratioTitle}</span>
@@ -2397,10 +2398,7 @@ export function CreateJobForm({ defaultImageModel, language }: { defaultImageMod
             >
               <div className="create-area-panel-stage is-submit">
                 <section className="panel create-panel create-submit-panel">
-                  <div className="create-mode-panel-heading">
-                    <span className="create-workbench-kicker">{activeModeProfile.eyebrow}</span>
-                    <h2>{language === "zh" ? "生成确认" : "Generation checkout"}</h2>
-                  </div>
+                  {imageTypeFieldset}
                   <div className={payload.creationMode === "reference-remix" ? "create-quantity-submit-group create-quantity-submit-group-inline is-remix-mode" : "create-quantity-submit-group create-quantity-submit-group-inline"}>
                   {payload.creationMode !== "reference-remix" && payload.creationMode !== "prompt" ? (
                     <label className="create-quantity-field create-quantity-card">

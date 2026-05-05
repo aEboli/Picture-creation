@@ -8806,6 +8806,49 @@ select {
 .create-submit-panel {
   display: grid;
   gap: 12px;
+  align-content: start;
+}
+
+.create-area-panel-stage.is-submit .create-generation-fieldset-types {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.018)),
+    rgba(9, 13, 24, 0.42);
+}
+
+.create-area-panel-stage.is-submit .create-generation-fieldset-types legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.create-area-panel-stage.is-submit .chip-grid-types {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.create-area-panel-stage.is-submit .create-generation-fieldset-types .chip {
+  min-height: 34px;
+  padding: 6px 8px;
+  border-radius: 999px;
+  gap: 4px;
+}
+
+.create-area-panel-stage.is-submit .create-generation-fieldset-types .chip span:last-child,
+.create-area-panel-stage.is-submit .create-generation-fieldset-types .chip strong {
+  min-height: 0;
+  font-size: 0.8rem;
+  line-height: 1.1;
 }
 
 .create-area-panel-stage.is-submit .create-quantity-submit-group-inline {
