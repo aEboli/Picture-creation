@@ -16,7 +16,7 @@
 
 如果你不确定当前端口，可以看：
 
-- `C:\Users\AEboli\Documents\CODEX\Picture-creation-main\.runtime\`
+- `C:\Users\AEboli\Documents\CODEX\picture-creation\.runtime\`
 
 ### 1.2 接口风格
 
@@ -661,8 +661,8 @@ curl.exe "http://127.0.0.1:3888/api/jobs/job_xxx"
 
 正式版启动日志：
 
-- `C:\Users\AEboli\Documents\CODEX\Picture-creation-main\.runtime\prod-3888.log`
-- `C:\Users\AEboli\Documents\CODEX\Picture-creation-main\.runtime\prod-3888.err.log`
+- `C:\Users\AEboli\Documents\CODEX\picture-creation\.runtime\prod-3888.log`
+- `C:\Users\AEboli\Documents\CODEX\picture-creation\.runtime\prod-3888.err.log`
 
 常用检查：
 
@@ -824,12 +824,12 @@ curl.exe -X POST "http://127.0.0.1:3888/api/settings/test-multimodal" ^
 如果你要继续深挖实现，最关键的代码入口是：
 
 - 生成请求校验：
-  [payload.ts](C:/Users/AEboli/Documents/CODEX/Picture-creation-main/lib/server/generation/payload.ts)
+  [payload.ts](C:/Users/AEboli/Documents/CODEX/picture-creation/lib/server/generation/payload.ts)
 - 任务创建：
-  [create-job.ts](C:/Users/AEboli/Documents/CODEX/Picture-creation-main/lib/server/generation/create-job.ts)
+  [create-job.ts](C:/Users/AEboli/Documents/CODEX/picture-creation/lib/server/generation/create-job.ts)
 - 主生成流程：
-  [process-job.ts](C:/Users/AEboli/Documents/CODEX/Picture-creation-main/lib/server/generation/process-job.ts)
+  [process-job.ts](C:/Users/AEboli/Documents/CODEX/picture-creation/lib/server/generation/process-job.ts)
 - 实际模型调用：
-  [gemini.ts](C:/Users/AEboli/Documents/CODEX/Picture-creation-main/lib/gemini.ts)
+  [gemini.ts](C:/Users/AEboli/Documents/CODEX/picture-creation/lib/gemini.ts)
 - 任务详情接口：
-  [route.ts](C:/Users/AEboli/Documents/CODEX/Picture-creation-main/app/api/jobs/[id]/route.ts)
+  [route.ts](C:/Users/AEboli/Documents/CODEX/picture-creation/app/api/jobs/[id]/route.ts)

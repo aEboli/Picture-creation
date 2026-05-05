@@ -4,8 +4,6 @@
 
 > 一个面向电商团队的本地化 AI 生图工作台，支持多模式创作、浏览器本地 API 配置、图型提示词调校、历史审核、品牌规则管理、飞书同步与 Windows 安装交付。
 
-源码目录：[`Picture-creation-main/`](./Picture-creation-main/)
-
 | 版本 | 默认文本模型 | 默认图片模型 | GitHub |
 | --- | --- | --- | --- |
 | `v0.9.0` | `gemini-3.1-flash-lite-preview` | `gemini-3.1-flash-image-preview` | [aEboli/Picture-creation](https://github.com/aEboli/Picture-creation) |
@@ -16,11 +14,11 @@
 
 | 总览页 | 创作台 | 历史记录 |
 | --- | --- | --- |
-| ![总览页](./Picture-creation-main/Readme/assets/picture-creation-v0.8.0/01-overview.png) | ![创作台](./Picture-creation-main/Readme/assets/picture-creation-v0.8.0/02-creation-workbench.png) | ![历史记录](./Picture-creation-main/Readme/assets/picture-creation-v0.8.0/03-history.png) |
+| ![总览页](./Readme/assets/picture-creation-v0.8.0/01-overview.png) | ![创作台](./Readme/assets/picture-creation-v0.8.0/02-creation-workbench.png) | ![历史记录](./Readme/assets/picture-creation-v0.8.0/03-history.png) |
 
 | 设置中心 | 标准模式 | 参考图复刻 |
 | --- | --- | --- |
-| ![设置页](./Picture-creation-main/Readme/assets/picture-creation-v0.8.0/05-settings.png) | ![标准模式](./Picture-creation-main/Readme/assets/picture-creation-v0.8.0/06-standard-mode.png) | ![参考图复刻](./Picture-creation-main/Readme/assets/picture-creation-v0.8.0/10-reference-remix-a.png) |
+| ![设置页](./Readme/assets/picture-creation-v0.8.0/05-settings.png) | ![标准模式](./Readme/assets/picture-creation-v0.8.0/06-standard-mode.png) | ![参考图复刻](./Readme/assets/picture-creation-v0.8.0/10-reference-remix-a.png) |
 
 ## 核心能力
 
@@ -56,25 +54,24 @@
 | 类型 | 文件/目录 |
 | --- | --- |
 | Inno 安装器 | `PICTURE-CREATION-WINDOWS-0.9.0.exe` |
-| 绿色发布目录 | `Picture-creation-main/release/picture-creation` |
-| 绿色发布压缩包 | `Picture-creation-main/release/picture-creation.zip` |
-| 安全发布压缩包 | `Picture-creation-main/release/picture-creation-safe.zip` |
-| 安装包目录 | `Picture-creation-main/release/picture-creation-safe-installer` |
+| 绿色发布目录 | `release/picture-creation` |
+| 绿色发布压缩包 | `release/picture-creation.zip` |
+| 安全发布压缩包 | `release/picture-creation-safe.zip` |
+| 安装包目录 | `release/picture-creation-safe-installer` |
 
 ## 文档导航
 
-- [使用说明-Picture-creation](./Picture-creation-main/Readme/%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E-Picture-creation.md)
-- [PRD-Picture-creation](./Picture-creation-main/Readme/PRD-Picture-creation.md)
-- [版本说明-v0.9.0](./Picture-creation-main/Readme/%E7%89%88%E6%9C%AC%E8%AF%B4%E6%98%8E-v0.9.0.md)
-- [历史版本说明-v0.8.0](./Picture-creation-main/Readme/%E7%89%88%E6%9C%AC%E8%AF%B4%E6%98%8E-v0.8.0.md)
-- [历史版本说明-v0.7.0](./Picture-creation-main/Readme/%E7%89%88%E6%9C%AC%E8%AF%B4%E6%98%8E-v0.7.0.md)
-- [使用说明-多图联合生成语义](./Picture-creation-main/Readme/%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E-%E5%A4%9A%E5%9B%BE%E8%81%94%E5%90%88%E7%94%9F%E6%88%90%E8%AF%AD%E4%B9%89.md)
-- [PRD-多图联合生成语义](./Picture-creation-main/Readme/PRD-%E5%A4%9A%E5%9B%BE%E8%81%94%E5%90%88%E7%94%9F%E6%88%90%E8%AF%AD%E4%B9%89.md)
+- [使用说明-Picture-creation](./Readme/%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E-Picture-creation.md)
+- [PRD-Picture-creation](./Readme/PRD-Picture-creation.md)
+- [版本说明-v0.9.0](./Readme/%E7%89%88%E6%9C%AC%E8%AF%B4%E6%98%8E-v0.9.0.md)
+- [历史版本说明-v0.8.0](./Readme/%E7%89%88%E6%9C%AC%E8%AF%B4%E6%98%8E-v0.8.0.md)
+- [历史版本说明-v0.7.0](./Readme/%E7%89%88%E6%9C%AC%E8%AF%B4%E6%98%8E-v0.7.0.md)
+- [使用说明-多图联合生成语义](./Readme/%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E-%E5%A4%9A%E5%9B%BE%E8%81%94%E5%90%88%E7%94%9F%E6%88%90%E8%AF%AD%E4%B9%89.md)
+- [PRD-多图联合生成语义](./Readme/PRD-%E5%A4%9A%E5%9B%BE%E8%81%94%E5%90%88%E7%94%9F%E6%88%90%E8%AF%AD%E4%B9%89.md)
 
 ## 本地开发
 
 ```bash
-cd Picture-creation-main
 npm install
 npm run typecheck
 npm run build
